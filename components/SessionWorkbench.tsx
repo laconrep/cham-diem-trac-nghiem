@@ -33,49 +33,127 @@ export default function SessionWorkbench({
   sessionTitle: string;
 }) {
   // ---------- Camera (mở liên tục, không đóng/mở lại giữa các bài) ----------
+  // Thử camera sau trước (chụp bài trên điện thoại); nếu máy không có camera
+  // sau (máy tính, một số trình duyệt) thì thử lại với camera bất kỳ.
+  // Có máy cấp quyền nhưng không đưa hình về (màn hình đen thui) thì cũng
+  // coi như mở lỗi: dừng luồng đó, thử cách khác. Lỗi nào cũng báo rõ lý do
+  // để GV biết phải làm gì (cấp quyền / đổi thiết bị / đóng app khác).
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraError, setCameraError] = useState("");
+  const [cameraStatus, setCameraStatus] = useState("Đang mở camera…");
   const [useFileMode, setUseFileMode] = useState(false);
+  const cameraCancelledRef = useRef(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function start() {
-      if (!navigator.mediaDevices?.getUserMedia) {
-        setCameraError("Trình duyệt này không hỗ trợ camera. Dùng ô chọn file ảnh bên dưới.");
-        setUseFileMode(true);
-        return;
-      }
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  /** Chờ khung hình thật từ thẻ video (tối đa ms). Trả về false nếu video vẫn đen. */
+  function waitForFrames(video: HTMLVideoElement, ms = 5000): Promise<boolean> {
+    return new Promise((resolve) => {
+      const start = Date.now();
+      const tick = () => {
+        // Có máy chỉ phát khi play() được gọi lại sau khi có metadata.
+        if (video.paused) void video.play().catch(() => undefined);
+        if (video.videoWidth > 0 && video.readyState >= 2) return resolve(true);
+        if (Date.now() - start > ms) return resolve(false);
+        setTimeout(tick, 300);
+      };
+      tick();
+    });
+  }
+
+  async function startCamera() {
+    cameraCancelledRef.current = false;
+    setCameraError("");
+    setCameraOn(false);
+    setCameraStatus("Đang mở camera…");
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraError("Trình duyệt này không hỗ trợ camera. Dùng ô chọn file ảnh bên dưới (chụp bài bằng app camera của điện thoại rồi chọn ảnh).");
+      setCameraStatus("");
+      setUseFileMode(true);
+      return;
+    }
+    const attempts: MediaStreamConstraints[] = [
+      { video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
+      { video: true, audio: false },
+      { video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
+    ];
+    let lastErr: unknown = null;
+    for (const constraints of attempts) {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" },
-          audio: false,
-        });
-        if (cancelled) {
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        if (cameraCancelledRef.current) {
           stream.getTracks().forEach((t) => t.stop());
           return;
         }
         streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play().catch(() => undefined);
+        setUseFileMode(false);
+        // Đợi React vẽ lại thẻ video (trường hợp bấm thử lại sau lỗi) rồi mới gắn luồng.
+        await sleep(150);
+        const video = videoRef.current;
+        if (video) {
+          video.srcObject = stream;
+          try {
+            await video.play();
+          } catch {
+            /* thử lại trong waitForFrames */
+          }
         }
-        setCameraOn(true);
-      } catch {
-        if (!cancelled) {
-          setCameraError("Không mở được camera (chưa cấp quyền hoặc máy không có camera). Dùng ô chọn file ảnh bên dưới.");
-          setUseFileMode(true);
+        const hasFrames = video ? await waitForFrames(video) : false;
+        if (cameraCancelledRef.current) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
         }
+        if (hasFrames) {
+          setCameraOn(true);
+          setCameraStatus("");
+          return;
+        }
+        // Có luồng nhưng không có hình (đen thui) → dừng luồng này, thử cách khác.
+        stream.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+        lastErr = new Error("black");
+        setCameraStatus("Camera đã mở nhưng chưa có hình, đang thử lại…");
+      } catch (e) {
+        lastErr = e;
       }
     }
-    void start();
+    if (cameraCancelledRef.current) return;
+    setCameraStatus("");
+    const name = (lastErr as DOMException | null)?.name ?? "";
+    if ((lastErr as Error)?.message === "black") {
+      setCameraError("Camera đã mở nhưng màn hình vẫn đen (máy không đưa hình về). Thử: 1) tắt app camera khác đang mở, 2) bấm “Thử mở lại camera”, 3) hoặc dùng ô chọn file ảnh bên dưới — chụp bằng app camera của điện thoại rồi chọn ảnh.");
+    } else if (name === "NotAllowedError") {
+      setCameraError("Trình duyệt đã chặn quyền camera. Bấm biểu tượng ổ khóa (hoặc camera) trên thanh địa chỉ → cho phép dùng camera, rồi bấm “Thử mở lại camera”.");
+    } else if (name === "NotFoundError") {
+      setCameraError("Không tìm thấy camera trên thiết bị này. Dùng ô chọn file ảnh bên dưới — chụp bài bằng app camera của điện thoại rồi chọn ảnh.");
+    } else if (name === "NotReadableError") {
+      setCameraError("Camera đang bận (một ứng dụng khác đang dùng camera). Đóng ứng dụng đó rồi bấm “Thử mở lại camera”.");
+    } else {
+      setCameraError("Không mở được camera. Dùng ô chọn file ảnh bên dưới (chụp bài bằng app camera rồi chọn ảnh) hoặc bấm “Thử mở lại camera”.");
+    }
+    setUseFileMode(true);
+  }
+
+  useEffect(() => {
+    void startCamera();
     return () => {
-      cancelled = true;
+      cameraCancelledRef.current = true;
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Gắn lại luồng camera vào thẻ video khi nó được vẽ lại (vd sau khi bấm
+  // “Thử mở lại camera” thành công — lúc đó thẻ video mới xuất hiện trở lại).
+  useEffect(() => {
+    if (cameraOn && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+      void videoRef.current.play().catch(() => undefined);
+    }
+  }, [cameraOn, useFileMode]);
 
   // ---------- Nhóm ảnh của 1 bài HS (tách riêng từng bài) ----------
   // KHÔNG nhập tên HS: AI tự đọc tên trên bài làm khi chấm và điền vào kết quả
@@ -228,11 +306,23 @@ export default function SessionWorkbench({
 
         {!useFileMode && (
           <div className="mt-4 overflow-hidden rounded-lg bg-black">
-            <video ref={videoRef} playsInline muted className="mx-auto max-h-[420px] w-full object-contain" />
+            <video ref={videoRef} playsInline muted autoPlay className="mx-auto max-h-[420px] w-full object-contain" />
           </div>
         )}
         {cameraError && (
-          <p className="mt-3 rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">{cameraError}</p>
+          <div className="mt-3 rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            <p>{cameraError}</p>
+            <button
+              type="button"
+              onClick={() => void startCamera()}
+              className="mt-2 rounded-lg bg-teal-700 px-4 py-1.5 text-sm font-semibold text-white hover:bg-teal-800"
+            >
+              Thử mở lại camera
+            </button>
+          </div>
+        )}
+        {cameraStatus && !cameraError && (
+          <p className="mt-3 text-sm text-slate-500">{cameraStatus}</p>
         )}
         {!useFileMode && cameraOn && (
           <button
@@ -258,7 +348,7 @@ export default function SessionWorkbench({
               className="mt-1 w-full text-sm"
             />
             {!cameraOn && !cameraError && (
-              <button type="button" onClick={() => window.location.reload()} className="mt-2 text-sm text-teal-800 underline">
+              <button type="button" onClick={() => void startCamera()} className="mt-2 text-sm text-teal-800 underline">
                 Thử mở lại camera
               </button>
             )}
