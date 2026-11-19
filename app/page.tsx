@@ -19,7 +19,7 @@ export default async function Home() {
   }
   const db = getSupabase();
   const { data: sessions } = await db
-    .from("sessions")
+    .from("cdtn_sessions")
     .select("id, title, status, created_at")
     .order("created_at", { ascending: false });
 

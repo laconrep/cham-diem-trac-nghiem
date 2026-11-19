@@ -15,14 +15,14 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     const { id: sessionId } = await params;
     const db = getSupabase();
     const { data: submissions, error } = await db
-      .from("submissions")
+      .from("cdtn_submissions")
       .select("id, student_name, files, status, job_id, created_at")
       .eq("session_id", sessionId)
       .order("created_at", { ascending: true });
     if (error) throw new Error(error.message);
     const subs = submissions ?? [];
     const { data: results } = await db
-      .from("grade_results")
+      .from("cdtn_grade_results")
       .select("*")
       .in(
         "submission_id",
@@ -44,7 +44,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     });
 
     const { data: jobs } = await db
-      .from("grade_jobs")
+      .from("cdtn_grade_jobs")
       .select("id, status, total, completed, progress, stage")
       .eq("session_id", sessionId)
       .order("created_at", { ascending: false })

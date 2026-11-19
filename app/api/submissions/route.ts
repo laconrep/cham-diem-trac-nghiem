@@ -13,7 +13,7 @@ const IMAGE_MIME = ["image/jpeg", "image/png", "image/webp", "image/heic", "imag
 async function ensureJobForSession(db: ReturnType<typeof getSupabase>, sessionId: string, submissionIds: string[]) {
   // Job đang chạy (queued/processing) thì gắn bài mới vào; không có thì tạo job mới.
   const { data: active } = await db
-    .from("grade_jobs")
+    .from("cdtn_grade_jobs")
     .select("id, total")
     .eq("session_id", sessionId)
     .in("status", ["queued", "processing"])
@@ -21,28 +21,28 @@ async function ensureJobForSession(db: ReturnType<typeof getSupabase>, sessionId
     .limit(1)
     .maybeSingle();
   if (active) {
-    await db.from("submissions").update({ job_id: active.id }).in("id", submissionIds);
+    await db.from("cdtn_submissions").update({ job_id: active.id }).in("id", submissionIds);
     await db
-      .from("grade_jobs")
+      .from("cdtn_grade_jobs")
       .update({ total: (active.total as number) + submissionIds.length })
       .eq("id", active.id);
     return active.id as string;
   }
   // Không có job đang chạy: tạo job mới cho các bài chưa chấm (kể cả bài cũ chưa có job).
   const { data: ungraded } = await db
-    .from("submissions")
+    .from("cdtn_submissions")
     .select("id")
     .eq("session_id", sessionId)
     .is("job_id", null)
     .in("status", ["queued", "error"]);
   const allIds = [...new Set([...submissionIds, ...((ungraded ?? []).map((u) => u.id as string))])];
   const { data: job, error } = await db
-    .from("grade_jobs")
+    .from("cdtn_grade_jobs")
     .insert({ session_id: sessionId, status: "queued", total: allIds.length, completed: 0, progress: 0 })
     .select("id")
     .single();
   if (error) throw new Error(error.message);
-  await db.from("submissions").update({ job_id: job.id }).in("id", allIds);
+  await db.from("cdtn_submissions").update({ job_id: job.id }).in("id", allIds);
   return job.id as string;
 }
 
@@ -62,7 +62,7 @@ export async function POST(req: Request) {
 
     const db = getSupabase();
     const { data: session, error: sErr } = await db
-      .from("sessions")
+      .from("cdtn_sessions")
       .select("id")
       .eq("id", sessionId)
       .single();
@@ -71,14 +71,14 @@ export async function POST(req: Request) {
     // Tên tạm theo thứ tự chụp ("HS 1", "HS 2"...). KHÔNG nhập tên tay:
     // AI tự đọc tên trên bài làm khi chấm và điền vào (xem submit_result).
     const { count } = await db
-      .from("submissions")
+      .from("cdtn_submissions")
       .select("id", { count: "exact", head: true })
       .eq("session_id", sessionId);
     const studentName = `HS ${(count ?? 0) + 1}`;
 
     // Tạo dòng submission trước để có id làm đường dẫn lưu ảnh.
     const { data: sub, error: iErr } = await db
-      .from("submissions")
+      .from("cdtn_submissions")
       .insert({ session_id: sessionId, student_name: studentName, files: [], status: "queued" })
       .select("id")
       .single();
@@ -97,7 +97,7 @@ export async function POST(req: Request) {
       if (uErr) throw new Error(`Tải ảnh “${f.name}” thất bại: ${uErr.message}`);
       stored.push({ name: f.name, url: getPublicUrl(path), kind: "image", mime: f.type });
     }
-    await db.from("submissions").update({ files: stored }).eq("id", submissionId);
+    await db.from("cdtn_submissions").update({ files: stored }).eq("id", submissionId);
 
     // Xếp hàng chờ chấm ngầm (trả về ngay, không chờ AI).
     const jobId = await ensureJobForSession(db, sessionId, [submissionId]);

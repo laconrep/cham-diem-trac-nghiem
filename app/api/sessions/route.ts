@@ -10,7 +10,7 @@ export async function GET() {
   try {
     const db = getSupabase();
     const { data, error } = await db
-      .from("sessions")
+      .from("cdtn_sessions")
       .select("id, title, status, created_at")
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
@@ -35,7 +35,7 @@ export async function POST(req: Request) {
     }
     const db = getSupabase();
     const { data, error } = await db
-      .from("sessions")
+      .from("cdtn_sessions")
       .insert({ title, answer_key: answerKey, criteria: answerKey, status: "active" })
       .select("id")
       .single();

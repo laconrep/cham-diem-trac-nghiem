@@ -9,7 +9,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   try {
     const { id } = await params;
     const db = getSupabase();
-    const { error } = await db.from("grade_results").update({ approved: true }).eq("id", id);
+    const { error } = await db.from("cdtn_grade_results").update({ approved: true }).eq("id", id);
     if (error) throw new Error(error.message);
     return Response.json({ ok: true });
   } catch (e) {

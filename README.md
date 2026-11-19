@@ -49,7 +49,7 @@ npm run dev                  # http://localhost:3000
 
 Chạy migration `supabase/migrations/001_init.sql` trên project Supabase
 (bằng SQL Editor — service key không chạy DDL được). Migration tạo các bảng
-`sessions`, `submissions`, `grade_jobs`, `grade_results` và bucket `cham-diem`.
+`cdtn_sessions`, `cdtn_submissions`, `cdtn_grade_jobs`, `cdtn_grade_results` và bucket `cham-diem`.
 
 ## Ghi nguồn
 

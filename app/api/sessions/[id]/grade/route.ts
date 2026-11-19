@@ -12,14 +12,14 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     const { id: sessionId } = await params;
     const db = getSupabase();
     const { data: session, error: sErr } = await db
-      .from("sessions")
+      .from("cdtn_sessions")
       .select("id")
       .eq("id", sessionId)
       .single();
     if (sErr || !session) return Response.json({ ok: false, error: "Không tìm thấy phiên." }, { status: 404 });
 
     const { data: ungraded } = await db
-      .from("submissions")
+      .from("cdtn_submissions")
       .select("id")
       .eq("session_id", sessionId)
       .in("status", ["queued", "error"])
@@ -30,7 +30,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     }
 
     const { data: active } = await db
-      .from("grade_jobs")
+      .from("cdtn_grade_jobs")
       .select("id, total, completed")
       .eq("session_id", sessionId)
       .in("status", ["queued", "processing"])
@@ -40,16 +40,16 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     if (active) {
       // Chỉ gắn các bài chưa thuộc job đang chạy (tránh đếm trùng).
       const { data: already } = await db
-        .from("submissions")
+        .from("cdtn_submissions")
         .select("id")
         .eq("job_id", active.id)
         .in("status", ["queued", "error"]);
       const alreadyIds = new Set((already ?? []).map((a) => a.id as string));
       const fresh = ids.filter((x) => !alreadyIds.has(x));
       if (fresh.length > 0) {
-        await db.from("submissions").update({ job_id: active.id }).in("id", fresh);
+        await db.from("cdtn_submissions").update({ job_id: active.id }).in("id", fresh);
         await db
-          .from("grade_jobs")
+          .from("cdtn_grade_jobs")
           .update({ total: (active.total as number) + fresh.length })
           .eq("id", active.id);
       }
@@ -57,12 +57,12 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     }
 
     const { data: job, error } = await db
-      .from("grade_jobs")
+      .from("cdtn_grade_jobs")
       .insert({ session_id: sessionId, status: "queued", total: ids.length, completed: 0, progress: 0 })
       .select("id")
       .single();
     if (error) throw new Error(error.message);
-    await db.from("submissions").update({ job_id: job.id }).in("id", ids);
+    await db.from("cdtn_submissions").update({ job_id: job.id }).in("id", ids);
     return Response.json({ ok: true, jobId: job.id as string, attached: ids.length });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Lỗi không xác định";

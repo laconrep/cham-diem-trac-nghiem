@@ -16,7 +16,7 @@ export interface JobSummary {
 export async function listPendingJobs(workerId: string, limit = 20): Promise<JobSummary[]> {
   const db = getSupabase();
   const { data, error } = await db
-    .from("grade_jobs")
+    .from("cdtn_grade_jobs")
     .select("id, session_id, status, total, completed, created_at, sessions(title)")
     .eq("status", "queued")
     .order("created_at", { ascending: true })
@@ -38,7 +38,7 @@ export async function listPendingJobs(workerId: string, limit = 20): Promise<Job
 export async function claimJob(jobId: string, workerId: string): Promise<GradeJobRow | null> {
   const db = getSupabase();
   const { data, error } = await db
-    .from("grade_jobs")
+    .from("cdtn_grade_jobs")
     .update({ status: "processing", worker_id: workerId })
     .eq("id", jobId)
     .eq("status", "queued")
@@ -50,15 +50,15 @@ export async function claimJob(jobId: string, workerId: string): Promise<GradeJo
 
 export async function getJobForWorker(jobId: string) {
   const db = getSupabase();
-  const { data: job, error } = await db.from("grade_jobs").select("*").eq("id", jobId).single();
+  const { data: job, error } = await db.from("cdtn_grade_jobs").select("*").eq("id", jobId).single();
   if (error || !job) return null;
   const { data: session } = await db
-    .from("sessions")
+    .from("cdtn_sessions")
     .select("id, title, answer_key, criteria")
     .eq("id", job.session_id)
     .single();
   const { data: submissions } = await db
-    .from("submissions")
+    .from("cdtn_submissions")
     .select("id, student_name, files, status, created_at")
     .eq("job_id", jobId)
     .in("status", ["queued", "grading", "error"])
@@ -84,7 +84,7 @@ export async function setJobProgress(
 ): Promise<{ ok: boolean; error?: string }> {
   const db = getSupabase();
   const { error } = await db
-    .from("grade_jobs")
+    .from("cdtn_grade_jobs")
     .update({ progress: Math.max(0, Math.min(100, progress)), stage: stage ?? null })
     .eq("id", jobId);
   if (error) return { ok: false, error: error.message };
@@ -97,7 +97,7 @@ export async function setSubmissionStatus(
   status: "queued" | "grading" | "done" | "error"
 ): Promise<{ ok: boolean; error?: string }> {
   const db = getSupabase();
-  const { error } = await db.from("submissions").update({ status }).eq("id", submissionId);
+  const { error } = await db.from("cdtn_submissions").update({ status }).eq("id", submissionId);
   if (error) return { ok: false, error: error.message };
   return { ok: true };
 }
@@ -123,7 +123,7 @@ export async function submitJobResult(
   const db = getSupabase();
   // 1. Ghi / cập nhật kết quả của bài (1 bài = 1 dòng result).
   const { data: existing } = await db
-    .from("grade_results")
+    .from("cdtn_grade_results")
     .select("id")
     .eq("job_id", jobId)
     .eq("submission_id", input.submissionId)
@@ -142,10 +142,10 @@ export async function submitJobResult(
   };
   let err = null;
   if (existing) {
-    const r = await db.from("grade_results").update(payload).eq("id", existing.id);
+    const r = await db.from("cdtn_grade_results").update(payload).eq("id", existing.id);
     err = r.error;
   } else {
-    const r = await db.from("grade_results").insert(payload);
+    const r = await db.from("cdtn_grade_results").insert(payload);
     err = r.error;
   }
   if (err) return { ok: false, error: err.message };
@@ -155,7 +155,7 @@ export async function submitJobResult(
   // Chỉ tăng completed khi bài này chưa từng được chấm xong (tránh đếm trùng
   // nếu worker nộp lại kết quả cho cùng 1 bài).
   const { data: subBefore } = await db
-    .from("submissions")
+    .from("cdtn_submissions")
     .select("status")
     .eq("id", input.submissionId)
     .single();
@@ -164,11 +164,11 @@ export async function submitJobResult(
     input.studentName && input.studentName.trim()
       ? { status: "done", student_name: input.studentName.trim() }
       : { status: "done" };
-  await db.from("submissions").update(nameUpdate).eq("id", input.submissionId);
+  await db.from("cdtn_submissions").update(nameUpdate).eq("id", input.submissionId);
 
   // 3. Cập nhật tiến độ job; đủ số bài thì đóng job.
   const { data: job } = await db
-    .from("grade_jobs")
+    .from("cdtn_grade_jobs")
     .select("total, completed")
     .eq("id", jobId)
     .single();
@@ -176,7 +176,7 @@ export async function submitJobResult(
   const total = (job?.total as number | undefined) ?? 0;
   const done = total > 0 && completed >= total;
   const { error: jobErr } = await db
-    .from("grade_jobs")
+    .from("cdtn_grade_jobs")
     .update({
       completed,
       progress: total > 0 ? Math.round((completed / total) * 100) : 100,
@@ -197,8 +197,8 @@ export async function failJob(
 ): Promise<{ ok: boolean; error?: string }> {
   const db = getSupabase();
   if (submissionId) {
-    await db.from("submissions").update({ status: "error" }).eq("id", submissionId);
-    await db.from("grade_results").insert({
+    await db.from("cdtn_submissions").update({ status: "error" }).eq("id", submissionId);
+    await db.from("cdtn_grade_results").insert({
       job_id: jobId,
       submission_id: submissionId,
       score_mcq: null,
@@ -211,7 +211,7 @@ export async function failJob(
       graded_at: new Date().toISOString(),
     });
     const { data: job } = await db
-      .from("grade_jobs")
+      .from("cdtn_grade_jobs")
       .select("total, completed")
       .eq("id", jobId)
       .single();
@@ -219,7 +219,7 @@ export async function failJob(
     const total = (job?.total as number | undefined) ?? 0;
     const done = total > 0 && completed >= total;
     await db
-      .from("grade_jobs")
+      .from("cdtn_grade_jobs")
       .update({
         completed,
         progress: total > 0 ? Math.round((completed / total) * 100) : 100,
@@ -231,7 +231,7 @@ export async function failJob(
     return { ok: true };
   }
   const { error } = await db
-    .from("grade_jobs")
+    .from("cdtn_grade_jobs")
     .update({ status: "error", finished_at: new Date().toISOString() })
     .eq("id", jobId);
   if (error) return { ok: false, error: error.message };

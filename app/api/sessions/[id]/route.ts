@@ -8,7 +8,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   try {
     const { id } = await params;
     const db = getSupabase();
-    const { data, error } = await db.from("sessions").select("*").eq("id", id).single();
+    const { data, error } = await db.from("cdtn_sessions").select("*").eq("id", id).single();
     if (error) throw new Error(error.message);
     if (!data) return Response.json({ ok: false, error: "Không tìm thấy phiên." }, { status: 404 });
     return Response.json({ ok: true, session: data });

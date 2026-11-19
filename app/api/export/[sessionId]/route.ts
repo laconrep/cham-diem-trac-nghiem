@@ -12,21 +12,21 @@ export async function GET(_req: Request, { params }: { params: Promise<{ session
     const { sessionId } = await params;
     const db = getSupabase();
     const { data: session, error: sErr } = await db
-      .from("sessions")
+      .from("cdtn_sessions")
       .select("id, title, answer_key")
       .eq("id", sessionId)
       .single();
     if (sErr || !session) return Response.json({ ok: false, error: "Không tìm thấy phiên." }, { status: 404 });
 
     const { data: submissions, error: subErr } = await db
-      .from("submissions")
+      .from("cdtn_submissions")
       .select("id, student_name, files, status, job_id, created_at")
       .eq("session_id", sessionId)
       .order("created_at", { ascending: true });
     if (subErr) throw new Error(subErr.message);
     const subs = submissions ?? [];
     const { data: results } = await db
-      .from("grade_results")
+      .from("cdtn_grade_results")
       .select("*")
       .in("submission_id", subs.map((s) => s.id as string));
     const bySub = new Map<string, (typeof results extends (infer T)[] | null ? T : never)>();

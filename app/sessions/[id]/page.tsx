@@ -10,7 +10,7 @@ export default async function SessionDetailPage({ params }: { params: Promise<{ 
     return <p className="text-amber-800">Chưa cấu hình Supabase. Xem .env.example.</p>;
   }
   const db = getSupabase();
-  const { data: session, error } = await db.from("sessions").select("*").eq("id", id).single();
+  const { data: session, error } = await db.from("cdtn_sessions").select("*").eq("id", id).single();
   if (error || !session) {
     return (
       <div>
