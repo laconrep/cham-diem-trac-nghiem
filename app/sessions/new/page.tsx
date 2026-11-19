@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { AnswerKey, QuestionPart } from "@/lib/types";
 import { graduationTemplate } from "@/lib/answer-key";
@@ -26,6 +26,14 @@ export default function NewSessionPage() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [essayText, setEssayText] = useState("");
+  // Ô barem tự giãn cao theo nội dung để hiện đủ tất cả các bước (không cuộn).
+  const essayRef = useRef<HTMLTextAreaElement | null>(null);
+  useEffect(() => {
+    const el = essayRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 480)}px`;
+  }, [essayText, answerKey]);
 
   const codes = useMemo(() => answerKey?.codes ?? [], [answerKey]);
 
@@ -273,11 +281,12 @@ export default function NewSessionPage() {
             <h3 className="mt-6 text-sm font-bold text-teal-800">Barem tự luận (Phần IV) — không bắt buộc</h3>
             <p className="text-xs text-slate-500">Đã tự điền từ file Word nếu file có mục barem tự luận — sửa trực tiếp tại đây nếu cần. Mỗi dòng một bước, dạng “Nội dung bước | điểm” (vd: “Viết đúng phương trình | 0.5”).</p>
             <textarea
+              ref={essayRef}
               value={essayText}
               onChange={(e) => setEssayText(e.target.value)}
               rows={3}
               placeholder={"Viết đúng phương trình | 0.5\nTính đúng kết quả | 0.5"}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              className="mt-1 w-full resize-none overflow-hidden rounded-lg border border-slate-300 px-3 py-2 text-sm"
             />
           </div>
         )}
