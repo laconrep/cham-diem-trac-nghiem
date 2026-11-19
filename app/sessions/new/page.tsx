@@ -43,6 +43,13 @@ export default function NewSessionPage() {
       }
       setAnswerKey(data.answerKey as AnswerKey);
       setWarnings((data.warnings ?? []) as Warning[]);
+      // Barem tự luận trong file Word (nếu có) tự điền vào ô bên dưới — khỏi nhập tay.
+      const eb = (data.answerKey?.essayBarem ?? []) as { content: string; points: number }[];
+      if (eb.length > 0) {
+        setEssayText(eb.map((s) => `${s.content} | ${s.points}`).join("\n"));
+      } else {
+        setEssayText("");
+      }
       if ((data.answerKey?.questions?.length ?? 0) === 0) {
         setError("File Word không có câu hỏi nào đọc được. Kiểm tra lại bảng đáp án (cột = mã đề, dòng = câu hỏi).");
       }
@@ -264,7 +271,7 @@ export default function NewSessionPage() {
             ))}
 
             <h3 className="mt-6 text-sm font-bold text-teal-800">Barem tự luận (Phần IV) — không bắt buộc</h3>
-            <p className="text-xs text-slate-500">Mỗi dòng một bước, dạng “Nội dung bước | điểm” (vd: “Viết đúng phương trình | 0.5”).</p>
+            <p className="text-xs text-slate-500">Đã tự điền từ file Word nếu file có mục barem tự luận — sửa trực tiếp tại đây nếu cần. Mỗi dòng một bước, dạng “Nội dung bước | điểm” (vd: “Viết đúng phương trình | 0.5”).</p>
             <textarea
               value={essayText}
               onChange={(e) => setEssayText(e.target.value)}

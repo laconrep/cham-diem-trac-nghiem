@@ -196,6 +196,17 @@ export async function parseAnswerDocx(buffer: Buffer): Promise<ParseResult> {
   }
   const res = parseAnswerTableRows(best);
   res.tablesFound = tables.length;
+  // Barem tự luận: đọc thêm từ file Word (mục "BAREM TỰ LUẬN" hoặc bảng Nội dung/Điểm)
+  // để màn hình tạo phiên tự điền — trước đây luôn trả [] nên GV phải nhập tay.
+  const essayBarem = extractEssayBaremFromHtml(html);
+  res.answerKey.essayBarem = essayBarem;
+  if (essayBarem.length === 0 && /tự luận/i.test(html)) {
+    res.warnings.push({
+      row: 0,
+      message:
+        "Chưa thấy barem tự luận trong file Word — nếu đề có tự luận, nhập tay vào ô “Barem tự luận” bên dưới (mỗi dòng “Nội dung | điểm”).",
+    });
+  }
   return res;
 }
 
@@ -234,4 +245,60 @@ export function parseEssayBaremText(text: string): EssayBaremStep[] {
       steps.push({ id: `b${i + 1}`, content: content || line, points });
     });
   return steps;
+}
+
+/** Chuyển HTML mammoth thành các dòng văn bản (mỗi <p>/<li>/<h*> một dòng). */
+function htmlToLines(html: string): string[] {
+  return html
+    .replace(/<(br|p|li|h[1-6]|tr|div)[^>]*>/gi, "\n")
+    .replace(/<\/(p|li|h[1-6]|tr|div)>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Đọc barem tự luận trong file Word (để màn hình tạo phiên tự điền, khỏi nhập tay).
+ * Hỗ trợ 2 dạng: (1) bảng có cột "Nội dung/Bước" + "Điểm";
+ * (2) đoạn văn sau dòng "BAREM TỰ LUẬN", mỗi dòng "Nội dung | điểm".
+ * Trả về [] khi file không có mục barem (đề chỉ có trắc nghiệm).
+ */
+function extractEssayBaremFromHtml(html: string): EssayBaremStep[] {
+  const tables = extractTables(html);
+  for (const t of tables) {
+    const head = (t[0] ?? []).map((c) => c.toLowerCase());
+    const hasContent = head.some((c) => c.includes("nội dung") || c.includes("bước"));
+    const hasPoints = head.some((c) => c.includes("điểm"));
+    if (hasContent && hasPoints) {
+      const steps: EssayBaremStep[] = [];
+      for (let i = 1; i < t.length; i++) {
+        const row = t[i];
+        const content = (row[0] ?? "").trim();
+        const pts = parseFloat((row[1] ?? "").trim().replace(",", "."));
+        if (content && !Number.isNaN(pts) && pts > 0) {
+          steps.push({ id: `b${steps.length + 1}`, content, points: pts });
+        }
+      }
+      if (steps.length > 0) return steps;
+    }
+  }
+  const lines = htmlToLines(html);
+  const idx = lines.findIndex((l) => /barem\s+tự\s+luận/i.test(l));
+  if (idx === -1) return [];
+  const baremLines: string[] = [];
+  for (let i = idx + 1; i < lines.length && baremLines.length < 30; i++) {
+    const line = lines[i];
+    // Dừng ở tiêu đề mục mới (vd "2 CÂU CẦN ĐỐI CHIẾU...").
+    if (/^\d+\s+câu cần/i.test(line)) break;
+    const m = line.match(/^(.*)\|\s*([\d]+(?:[.,]\d+)?)\s*$/);
+    if (m) baremLines.push(`${m[1].trim()} | ${m[2]}`);
+  }
+  return parseEssayBaremText(baremLines.join("\n"));
 }

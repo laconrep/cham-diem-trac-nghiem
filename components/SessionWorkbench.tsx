@@ -145,6 +145,23 @@ export default function SessionWorkbench({
     }
   }
 
+  // ---------- Barem tự luận đã lưu (để GV kiểm chứng đã nạp được) ----------
+  const [essayBarem, setEssayBarem] = useState<{ content: string; points: number }[]>([]);
+  const [criteriaLoaded, setCriteriaLoaded] = useState(false);
+
+  useEffect(() => {
+    fetch(`/api/sessions/${sessionId}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => {
+        const key = (d?.session?.answer_key ?? d?.session?.criteria) as
+          | { essayBarem?: { content: string; points: number }[] }
+          | null;
+        setEssayBarem(key?.essayBarem ?? []);
+        setCriteriaLoaded(true);
+      })
+      .catch(() => setCriteriaLoaded(true));
+  }, [sessionId]);
+
   // ---------- Kết quả chấm (poll nhẹ, hiện dần theo thứ tự chấm) ----------
   const [items, setItems] = useState<ResultItem[]>([]);
   const [jobs, setJobs] = useState<JobInfo[]>([]);
@@ -285,6 +302,32 @@ export default function SessionWorkbench({
           </button>
           {notice && <p className="mt-2 text-sm text-slate-700">{notice}</p>}
         </div>
+      </section>
+
+      {/* ===== Barem tự luận đã lưu ===== */}
+      <section className="rounded-lg border border-slate-200 bg-white p-4">
+        <h2 className="text-base font-bold">Barem tự luận đã lưu (Phần IV)</h2>
+        {!criteriaLoaded ? (
+          <p className="mt-1 text-sm text-slate-500">Đang tải…</p>
+        ) : essayBarem.length === 0 ? (
+          <p className="mt-1 text-sm text-slate-500">
+            Phiên này chưa có barem tự luận. Barem được nạp khi tạo phiên (từ mục “Barem tự luận” trong file Word hoặc nhập tay ở ô barem).
+          </p>
+        ) : (
+          <>
+            <ul className="mt-2 list-disc pl-5 text-sm">
+              {essayBarem.map((s, i) => (
+                <li key={i}>
+                  {s.content} — <b>{s.points}đ</b>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1 text-sm text-slate-600">
+              Tổng barem tự luận:{" "}
+              <b>{Number(essayBarem.reduce((a, s) => a + (s.points || 0), 0).toFixed(2))}đ</b>
+            </p>
+          </>
+        )}
       </section>
 
       {/* ===== Điều khiển phiên ===== */}

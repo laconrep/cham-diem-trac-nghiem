@@ -1,12 +1,12 @@
 # Dự án riêng: Chấm điểm trắc nghiệm + tự luận (app riêng, tách khỏi thaoluannhom)
 
-Trạng thái: SPEC ĐÃ CHỐT (19/11/2026). Chờ bác chốt tên repo + phạm vi v1.
+Trạng thái: ĐÃ LIVE 19/11/2026 (https://cham-diem-trac-nghiem.vercel.app/). Sửa 19/11 ~22:15: parse-answer đọc thêm barem tự luận từ file Word (xem mục 3).
 
 ## Spec đã chốt (6 phần + bổ sung)
 
 1. **Phạm vi:** phiên cá nhân (Giao việc cá nhân). HS nộp 2–3 ảnh: 1 phiếu trắc nghiệm + 1–2 trang tự luận.
 2. **Tự phát hiện phiếu trắc nghiệm:** app/trợ lý tự nhận biết ảnh nào là phiếu trắc nghiệm, ảnh nào là tự luận (không cần GV khai báo loại bài).
-3. **Đáp án:** GV tải file **Word (.docx)** chứa bảng đáp án — cột là mã đề, dòng là câu hỏi. App đọc bảng trong file Word → hiện **tiêu chí chấm** (từng câu: đáp án đúng + điểm) cho GV **duyệt/sửa trước**, duyệt xong mới bắt đầu chấm. Khi chấm: đọc mã đề trên phiếu HS → lấy đúng cột mã đề đó để đối chiếu.
+3. **Đáp án:** GV tải file **Word (.docx)** chứa bảng đáp án — cột là mã đề, dòng là câu hỏi. App đọc bảng trong file Word → hiện **tiêu chí chấm** (từng câu: đáp án đúng + điểm) cho GV **duyệt/sửa trước**, duyệt xong mới bắt đầu chấm. Khi chấm: đọc mã đề trên phiếu HS → lấy đúng cột mã đề đó để đối chiếu. **Barem tự luận cũng nạp từ chính file Word** (mục "BAREM TỰ LUẬN", mỗi dòng "Nội dung | điểm", hoặc bảng "Nội dung/Bước | Điểm") — tải file xong ô barem tự điền sẵn, GV sửa trực tiếp nếu cần; trang phiên hiện lại barem đã lưu để kiểm chứng. (Lỗi 19/11: parse-answer chỉ đọc bảng trắc nghiệm, luôn trả essayBarem [] nên barem không nạp được — đã sửa 19/11 ~22:15.)
 4. **Chấm trắc nghiệm (3 phần: ABCD, Đúng/Sai, trả lời ngắn):** AI đọc ô đã tô → đối chiếu đáp án → tính điểm, feedback từng câu đúng/sai.
 5. **Chấm tự luận (1 phần):** theo barem, ghi chú lên ảnh giống repo tham khảo (điểm từng bước +0,25đ [✓] / 0,00đ [✗], highlight vàng chỗ sai).
 6. **Ảnh chấm:** khoanh **xanh lá** = HS chọn đúng, **đỏ** = HS chọn sai, **vàng** = đáp án đúng của câu đó (khoanh ở ô đáp án đúng).
@@ -56,3 +56,15 @@ File: `~/workspace/repos/ontapsinhhoc2026/app/api/mcp/route.ts` (271 dòng) + `l
 ## Trở ngại 19/11 ~16:58
 
 - **Tạo repo qua API THẤT BẠI (403 "Resource not accessible by personal access token"):** token GitHub đã lưu chỉ có quyền push vào repo hiện có, KHÔNG có quyền tạo repo mới. Cách gỡ: bác tạo repo trống `cham-diem-trac-nghiem` trên github.com (1 phút) rồi em push code lên; hoặc bác gửi token mới có quyền tạo repo qua kho bảo mật.
+
+## Sửa lỗi phát hiện khi rà soát (19/11 ~17:09, trước khi push)
+
+- **Đụng tên bảng Supabase:** migration gốc dùng bảng `sessions`/`submissions` — project dùng chung đã có 2 bảng này của thaoluannhom (schema khác). `CREATE TABLE IF NOT EXISTS` sẽ âm thầm bỏ qua việc tạo bảng, app sẽ ghi vào bảng của thaoluannhom. **Đã sửa:** toàn bộ bảng app riêng dùng tiền tố `cdtn_` (`cdtn_sessions`, `cdtn_submissions`, `cdtn_grade_jobs`, `cdtn_grade_results`) — code + migration + README; build lại pass. Commit local d494a45.
+
+## Repo đã tạo + vướng push (19/11 ~17:24–17:25)
+
+- **Repo ĐÃ TẠO XONG qua trình duyệt** (bác tự đăng nhập laconrep + 2FA): https://github.com/laconrep/cham-diem-trac-nghiem — Public, trống, không README/.gitignore/license.
+- **Push bị chặn (403):** token đã lưu là fine-grained chỉ cho push vào repo đã chọn — kiểm chứng: push thử thaoluannhom_giaodien OK, push repo mới bị "Permission denied to laconrep" dù API báo push: True. Đang sửa bằng trình duyệt: thêm `cham-diem-trac-nghiem` vào allowlist của token (không tạo/xóa token, không đụng giá trị token).
+- **19/11 ~17:27: trình duyệt đã thêm repo vào token "suathaolaun" (tạo 24/10/2026) nhưng push VẪN 403** — token trong file KHÔNG phải suathaolaun. Kiểm chứng: token trong file ghi được vào thaoluannhom_giaodien (tạo + xóa nhánh tmp-token-test OK, đã dọn sạch) nhưng không ghi được cham-diem-trac-nghiem và Kehoachdayhoc. Cần liệt kê mọi fine-grained token để tìm đúng token trong file (khả năng tạo ~07/11, danh sách repo API của nó gồm 11 repo: cham-diem-hoc-sinh, cham-diem-hoc-sinh-standalone, cham-diem-trac-nghiem, JSSDK-Demo, Kehoachdayhoc, OmniRoute, ontapsinhhoc2026, register, thaoluannhom, thaoluannhom_giaodien, thaoluannhom_sub) rồi thêm repo vào đúng token đó. Helper askpass đã dời sang ~/.cache/git-askpass-laconrep.sh (file ở /tmp bị dọn mất).
+- **19/11 ~17:31 ĐÍNH CHÍNH: token trong file là fine-grained (1 dòng 93 ký tự, tiền tố github_pat_), KHÔNG phải classic "muse-push-chambainguvan"** (suy luận sai của trình duyệt — classic không có tiền tố github_pat_). Kiểm chứng push thật: chỉ ghi được thaoluannhom_giaodien; KHÔNG ghi được ontapsinhhoc2026, thaoluannhom, Kehoachdayhoc, cham-diem-trac-nghiem. Token khớp nhất là **"sua3"** (tạo 22/10/2026, chỉ có thaoluannhom_giaodien, last used trong tuần qua) — **HẾT HẠN 21/11/2026**. Đang cho trình duyệt thêm cham-diem-trac-nghiem vào sua3 rồi push lại ngay. Bài học: /user/repos + trường permissions của API KHÔNG phản ánh đúng quyền ghi của fine-grained token — push thật bằng git mới là chuẩn.
+- **19/11 ~17:32 PUSH XONG:** trình duyệt thêm cham-diem-trac-nghiem vào sua3 (xác nhận đủ 2 repo), push 2 commit lên main thành công, kiểm chứng qua API: repo public, default branch main, 2 commit (926be6b v1 + d494a45 cdtn_), đủ file (app, components, lib, supabase, README, DESIGN.md, GRADE_PROTOCOL.md). Repo: https://github.com/laconrep/cham-diem-trac-nghiem. **Việc tiếp theo: deploy lên v0.app (import repo GitHub) + đặt env vars + chạy migration 001_init.sql.** Nhắc bác: token sua3 hết hạn 21/11/2026 — sau đó cần token mới để push tiếp.
