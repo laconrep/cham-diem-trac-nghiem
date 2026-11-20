@@ -497,7 +497,7 @@ export default function SessionWorkbench({
                         </div>
                         {result.annotated_image_url && (
                           <div className="mt-2">
-                            <p className="text-sm font-semibold">Ảnh đã chấm (xanh lá = chọn đúng, đỏ = chọn sai, vàng = đáp án đúng):</p>
+                            <p className="text-sm font-semibold">Ảnh trắc nghiệm đã chấm (xanh lá = chọn đúng, đỏ = chọn sai, vàng = đáp án đúng):</p>
                             <a href={result.annotated_image_url} target="_blank" rel="noreferrer">
                               <img src={result.annotated_image_url} alt="Ảnh đã chấm" className="mt-1 max-h-80 rounded border" />
                             </a>
@@ -541,6 +541,14 @@ export default function SessionWorkbench({
                                 </li>
                               ))}
                             </ul>
+                          </div>
+                        )}
+                        {result.annotated_essay_image_url && (
+                          <div className="mt-2">
+                            <p className="text-sm font-semibold">Ảnh tự luận đã chấm (khung ghi chú từng bước barem, đỏ = điểm, vàng = chỗ sai):</p>
+                            <a href={result.annotated_essay_image_url} target="_blank" rel="noreferrer">
+                              <img src={result.annotated_essay_image_url} alt="Ảnh tự luận đã chấm" className="mt-1 max-h-80 rounded border" />
+                            </a>
                           </div>
                         )}
                         {result.feedback && <p className="mt-2 text-sm text-slate-700">{result.feedback}</p>}

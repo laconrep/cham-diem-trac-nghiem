@@ -28,7 +28,8 @@ và chấm cả trắc nghiệm + tự luận + tự tô khoanh lên ảnh.
 - `set_progress` — tiến độ 0–100 + nhãn giai đoạn.
 - `submit_result` — nộp kết quả 1 bài: điểm từng phần, kết quả từng câu
   trắc nghiệm (câu, đáp án HS, đáp án đúng, đúng/sai, điểm), nhận xét tự luận
-  theo bước, **URL ảnh đã chấm** (xem mục Ảnh chấm).
+  theo bước, **URL ảnh trắc nghiệm đã chấm + URL ảnh tự luận đã chấm**
+  (annotatedImageUrl + annotatedEssayImageUrl, xem mục Ảnh chấm).
 - `fail_job` — báo job/bài không xử lý được + lý do.
 
 Bảo mật: Bearer `AI_WORKER_TOKEN` (fail-closed < 8 ký tự → 503), header
@@ -56,9 +57,11 @@ Với MỖI bài nộp được giao:
      2:0,25, 3:0,5, 4:1,0}; P3 đúng × 0,5 — lấy từ tiêu chí đã duyệt, không tự bịa).
 4. Tự luận: chấm theo barem đã duyệt, ghi điểm từng bước
    (+0,25đ [✓] / 0,00đ [✗]) + highlight vàng chỗ sai (xem mục Ảnh chấm).
-5. Vẽ ảnh chấm (xem mục Ảnh chấm) → tải lên storage → lấy URL.
+5. Vẽ ảnh chấm (xem mục Ảnh chấm) → tải lên storage CẢ 2 ảnh (trắc nghiệm
+   annotated-1.jpg + tự luận annotated-2.jpg) → lấy 2 URL.
 6. Nộp kết quả qua MCP submit_result: điểm trắc nghiệm, điểm tự luận, tổng điểm,
-   kết quả từng câu trắc nghiệm, nhận xét tự luận theo bước, URL ảnh đã chấm.
+   kết quả từng câu trắc nghiệm, nhận xét tự luận theo bước, URL ảnh trắc nghiệm
+   đã chấm (annotatedImageUrl) + URL ảnh tự luận đã chấm (annotatedEssayImageUrl).
    Mọi bài đều phải có kết quả (lỗi → fail_job với lý do tiếng Việt).
 ```
 
@@ -67,15 +70,32 @@ Với MỖI bài nộp được giao:
 - Vẽ lên **bản sao** ảnh gốc (không sửa ảnh HS nộp), bằng PIL.
 - Trắc nghiệm: khoanh **xanh lá** ô HS chọn đúng; **đỏ** ô HS chọn sai;
   **vàng** ô đáp án đúng của câu HS chọn sai.
-- Tự luận: điểm từng bước dóng ở lề phải (+0,25đ [✓] / 0,00đ [✗]),
-  highlight vàng chỗ sai — theo mẫu `tao_bo_anh_da_cham.py` của repo tham khảo
-  (class VietnameseAnnotator, PIL ImageDraw, highlight alpha 0.40).
+- Tự luận — **khung ghi chú từng bước barem (phương án A, bác chốt 20/11)**,
+  theo ý tưởng `draw_logic_step_box` của repo tham khảo
+  (`tao_bo_anh_da_cham.py` — hàm này nhận cả điểm + ghi chú từng ý, kèm tem
+  tổng `draw_question_total` "[ TỔNG C19: 1,00 / 1,00đ ]"; lưu ý: code gốc
+  hiện chỉ vẽ chữ điểm đỏ, ghi chú nó nhận vào mà không vẽ — app mình vẽ cả
+  ghi chú ra như bác yêu cầu):
+  - Mỗi bước barem → 1 khung nhỏ đặt **ngay cạnh chỗ HS viết ý đó** (dóng lề
+    phải nếu còn chỗ trống; không có chỗ thì đặt dưới đoạn viết đó).
+  - Trong khung: điểm bước bằng **mực đỏ** (`+0,5đ [✓]` / `0,00đ [✗]`) +
+    **1 dòng ghi chú ngắn** (nội dung bước / lý do cho hay không cho điểm,
+    VD "Thiếu cơ chế CaO trung hoà H+, bổ sung Ca2+").
+  - Khung: viền đỏ mỏng, nền trắng mờ — **tuyệt đối không che chữ HS**; nếu
+    trang chật thì thu chữ ghi chú nhỏ lại, không vẽ khung đè lên chữ.
+  - Cuối trang vẽ tem tổng kiểu repo gốc: `[ Tự luận: x,xx/3,0đ ]`
+    (nền nhạt + viền đỏ).
+  - Highlight **vàng** chỗ sai (alpha 0.40) như trước.
 - Tọa độ ô: xác định bằng mắt (visual grounding) trên ảnh đã xoay đúng hướng.
   Phiếu nào dò không ra lưới ô rõ ràng → KHÔNG khoanh bừa: nộp ảnh gốc + bảng
   đúng/sai từng câu trong kết quả để app hiện thay.
-- Tải ảnh đã chấm lên storage của app (đề xuất: dùng chung Supabase storage
-  project supabase-emerald-car, bucket riêng — theo đúng pattern ký signed URL
-  của thaoluannhom: URL-encode từng đoạn path riêng, giữ nguyên `/`).
+- Tải **CẢ 2 ảnh đã chấm** lên storage của app (bucket `cham-diem`, đường dẫn
+  `sessions/<session_id>/<submission_id>/annotated-1.jpg` cho trắc nghiệm và
+  `annotated-2.jpg` cho tự luận — theo đúng pattern ký signed URL của
+  thaoluannhom: URL-encode từng đoạn path riêng, giữ nguyên `/`).
+  Nộp kết quả với **cả 2 URL**: `annotatedImageUrl` (trắc nghiệm) và
+  `annotatedEssayImageUrl` (tự luận, cột `annotated_essay_image_url`,
+  migration 002) — app hiện cả 2 ảnh trong phần sản phẩm.
 - Mỗi agent dùng thư mục /tmp riêng (`/tmp/grade-<job8>-a<N>/`) — bài học 08/11.
 
 ## Xuất Excel (app làm, không phải agent)

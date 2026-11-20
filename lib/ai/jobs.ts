@@ -110,6 +110,8 @@ export interface SubmitResultInput {
   perQuestion: PerQuestionResult;
   feedback: string;
   annotatedImageUrl: string | null;
+  /** URL ảnh tự luận đã chấm (khung ghi chú từng bước barem, phương án A — migration 002). */
+  annotatedEssayImageUrl: string | null;
   /** Tên HS AI đọc được trên bài làm (bác chốt 19/11 ~17:03: không nhập tên tay —
    *  AI tự đọc tên trên phiếu và điền; bài nào đọc không ra thì giữ tên tạm "HS N"). */
   studentName?: string | null;
@@ -137,6 +139,7 @@ export async function submitJobResult(
     per_question: input.perQuestion,
     feedback: input.feedback,
     annotated_image_url: input.annotatedImageUrl,
+    annotated_essay_image_url: input.annotatedEssayImageUrl,
     status: "ready",
     graded_at: new Date().toISOString(),
   };
@@ -207,6 +210,7 @@ export async function failJob(
       per_question: null,
       feedback: reason,
       annotated_image_url: null,
+      annotated_essay_image_url: null,
       status: "error",
       graded_at: new Date().toISOString(),
     });

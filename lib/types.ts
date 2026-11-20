@@ -88,6 +88,8 @@ export interface GradeResultRow {
   per_question: PerQuestionResult | null;
   feedback: string | null;
   annotated_image_url: string | null;
+  /** URL ảnh tự luận đã chấm (khung ghi chú từng bước barem, phương án A — migration 002). */
+  annotated_essay_image_url: string | null;
   status: string;
   approved: boolean;
   graded_at: string | null;

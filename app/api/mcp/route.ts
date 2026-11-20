@@ -107,7 +107,7 @@ const TOOLS = [
   {
     name: "submit_result",
     description:
-      "Nộp kết quả chấm 1 bài: điểm trắc nghiệm, điểm tự luận, tổng điểm, kết quả từng câu (câu, đáp án HS, đáp án đúng, đúng/sai, điểm), nhận xét tự luận theo bước, URL ảnh đã chấm (khoanh xanh/đỏ/vàng), và studentName — tên HS AI đọc được trên bài làm (ô Họ và tên trên phiếu; null nếu không đọc được, app giữ tên tạm HS N).",
+      "Nộp kết quả chấm 1 bài: điểm trắc nghiệm, điểm tự luận, tổng điểm, kết quả từng câu (câu, đáp án HS, đáp án đúng, đúng/sai, điểm), nhận xét tự luận theo bước, URL ảnh trắc nghiệm đã chấm (khoanh xanh/đỏ/vàng), URL ảnh tự luận đã chấm (khung ghi chú từng bước barem — annotatedEssayImageUrl), và studentName — tên HS AI đọc được trên bài làm (ô Họ và tên trên phiếu; null nếu không đọc được, app giữ tên tạm HS N).",
     inputSchema: {
       type: "object",
       properties: {
@@ -122,6 +122,7 @@ const TOOLS = [
             perQuestion: { type: "object" },
             feedback: { type: "string" },
             annotatedImageUrl: { type: "string" },
+            annotatedEssayImageUrl: { type: "string" },
             studentName: { type: "string" },
           },
           required: ["scoreMcq", "scoreEssay", "scoreTotal", "perQuestion"],
@@ -201,6 +202,8 @@ async function callTool(name: string, args: Record<string, unknown>, workerId: s
         perQuestion: (r.perQuestion ?? { exam_code: null, items: [], essay_steps: [], errors: [], note: "" }) as SubmitResultInput["perQuestion"],
         feedback: typeof r.feedback === "string" ? r.feedback : "",
         annotatedImageUrl: typeof r.annotatedImageUrl === "string" ? r.annotatedImageUrl : null,
+        annotatedEssayImageUrl:
+          typeof r.annotatedEssayImageUrl === "string" ? r.annotatedEssayImageUrl : null,
         // Tên HS AI đọc được trên bài làm (ô "Họ và tên" trên phiếu); null nếu không đọc được
         // -> app giữ tên tạm "HS N" theo thứ tự chụp.
         studentName: typeof r.studentName === "string" ? r.studentName : null,
