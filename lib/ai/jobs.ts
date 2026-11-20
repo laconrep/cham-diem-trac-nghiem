@@ -1,6 +1,7 @@
 // Hàm nghiệp vụ cho cổng MCP — mọi thao tác DB đi qua đây, route chỉ làm
 // JSON-RPC plumbing (theo mẫu lib/ai/jobs.ts của EduSync).
 import { getSupabase } from "../supabase";
+import { normalizeEssaySteps, round2 } from "../scoring";
 import type { GradeJobRow, PerQuestionResult, SessionRow } from "../types";
 
 export interface JobSummary {
@@ -123,6 +124,19 @@ export async function submitJobResult(
   input: SubmitResultInput
 ): Promise<{ ok: boolean; error?: string; jobDone?: boolean }> {
   const db = getSupabase();
+  // Thang điểm tự luận nhỏ nhất là 0,25đ (bác chốt 20/11): chuẩn hoá điểm
+  // từng bước về bội số 0,25 gần nhất, rồi tính lại điểm tự luận + tổng
+  // điểm từ các bước đã chuẩn hoá (tránh agent gửi 0,125đ như bài Cẩm Diên
+  // bước b6 phiên "10"). Điểm trắc nghiệm giữ nguyên như agent gửi.
+  let perQuestion = input.perQuestion;
+  let scoreEssay = input.scoreEssay;
+  let scoreTotal = input.scoreTotal;
+  if (perQuestion?.essay_steps?.length) {
+    const norm = normalizeEssaySteps(perQuestion.essay_steps);
+    perQuestion = { ...perQuestion, essay_steps: norm.steps };
+    scoreEssay = norm.total;
+    scoreTotal = round2(input.scoreMcq + norm.total);
+  }
   // 1. Ghi / cập nhật kết quả của bài (1 bài = 1 dòng result).
   const { data: existing } = await db
     .from("cdtn_grade_results")
@@ -134,9 +148,9 @@ export async function submitJobResult(
     job_id: jobId,
     submission_id: input.submissionId,
     score_mcq: input.scoreMcq,
-    score_essay: input.scoreEssay,
-    score_total: input.scoreTotal,
-    per_question: input.perQuestion,
+    score_essay: scoreEssay,
+    score_total: scoreTotal,
+    per_question: perQuestion,
     feedback: input.feedback,
     annotated_image_url: input.annotatedImageUrl,
     annotated_essay_image_url: input.annotatedEssayImageUrl,

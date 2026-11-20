@@ -55,8 +55,14 @@ Với MỖI bài nộp được giao:
    - Đối chiếu đáp án → đúng/sai từng câu → tính điểm theo thang đã duyệt
      (mặc định mẫu thi tốt nghiệp: P1 đúng × 0,25; P2 thang Bộ {0:0, 1:0,1,
      2:0,25, 3:0,5, 4:1,0}; P3 đúng × 0,5 — lấy từ tiêu chí đã duyệt, không tự bịa).
-4. Tự luận: chấm theo barem đã duyệt, ghi điểm từng bước
-   (+0,25đ [✓] / 0,00đ [✗]) + highlight vàng chỗ sai (xem mục Ảnh chấm).
+4. Tự luận: chấm theo barem đã duyệt, ghi điểm từng bước + highlight vàng
+   chỗ sai (xem mục Ảnh chấm). **Thang điểm tự luận nhỏ nhất là 0,25đ (bác
+   chốt 20/11): điểm mỗi bước CHỈ được là bội số của 0,25 (0 / 0,25 / 0,5 / …)
+   và không vượt điểm tối đa của bước — bước 0,25đ chỉ được 0 hoặc 0,25
+   (không cho nửa bước 0,125đ); bước 0,5đ chỉ được 0 / 0,25 / 0,5. Tuyệt đối
+   không cho 0,125đ, 0,375đ hay bất kỳ giá trị lẻ nào khác.** App cũng chuẩn
+   hoá lại ở cổng nộp kết quả, nhưng agent phải cho đúng ngay từ đầu để khung
+   ghi chú trên ảnh khớp với điểm đã lưu.
 5. Vẽ ảnh chấm (xem mục Ảnh chấm) → tải lên storage CẢ 2 ảnh (trắc nghiệm
    annotated-1.jpg + tự luận annotated-2.jpg) → lấy 2 URL.
 6. Nộp kết quả qua MCP submit_result: điểm trắc nghiệm, điểm tự luận, tổng điểm,

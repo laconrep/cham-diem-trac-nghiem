@@ -75,3 +75,20 @@ File: `~/workspace/repos/ontapsinhhoc2026/app/api/mcp/route.ts` (271 dòng) + `l
 - **Sửa:** migration 002 thêm cột `cdtn_grade_results.annotated_essay_image_url`; `submit_result` (MCP) nhận thêm `annotatedEssayImageUrl`; trang phiên hiện thêm mục "Ảnh tự luận đã chấm" dưới bảng điểm từng bước; quy trình chấm (GRADE_PROTOCOL.md) quy định vẽ khung ghi chú từng bước barem: điểm đỏ (+0,5đ [✓] / 0,00đ [✗]) + 1 dòng ghi chú ngắn, đặt cạnh chỗ HS viết ý đó, không che chữ HS; tem tổng "[ Tự luận: x,xx/3,0đ ]" cuối trang; highlight vàng chỗ sai giữ nguyên.
 - **Lưu ý repo gốc:** `draw_logic_step_box` của `tao_bo_anh_da_cham.py` nhận cả điểm + ghi chú nhưng code hiện tại chỉ vẽ chữ điểm đỏ (ghi chú không vẽ ra) — app mình vẽ cả ghi chú theo yêu cầu của bác.
 - **Backfill:** 3 bài phiên "10" đã chấm trước khi có tính năng này được vẽ lại khung ghi chú từ kết quả đã lưu (không chấm lại điểm).
+
+## Giao diện kết quả (bác chốt 20/11 ~17:13, commit 6e0cb01)
+
+- 2 ảnh đã chấm (trắc nghiệm + tự luận) nằm cạnh nhau trong 1 hàng kéo ngang (`flex overflow-x-auto`, mỗi ảnh nửa rộng tối thiểu 280px) — sau này có thêm ảnh thì giáo viên kéo ngang xem tiếp.
+- Bảng điểm từng câu + điểm từng bước tự luận ẩn trong thẻ gấp `<details>` tên "Chấm chi tiết", mặc định đóng, bấm vào mới sổ ra.
+- Dòng điểm tổng (TN/TL/mã đề), nhận xét chung và nút Duyệt vẫn hiện như cũ.
+
+## Xem ảnh đã chấm (bác chốt 20/11 ~18:55, commit 73fcf9e)
+
+- Bấm vào ảnh đã chấm (trắc nghiệm hoặc tự luận) → ảnh mở to hết màn hình ngay trong trang (lightbox nền đen), KHÔNG mở tab mới. Góc phải trên có nút ✕ để tắt; bấm ra nền đen hoặc phím Esc cũng tắt.
+
+## Thang điểm tự luận nhỏ nhất 0,25đ (bác chốt 20/11)
+
+- **Vấn đề:** bài Cẩm Diên phiên "10" có bước b6 (0,25đ) được cho 0,125đ — nửa bước, thang điểm lẻ, tổng tự luận ra 2,625 → 2,63đ.
+- **Quy tắc:** điểm mỗi bước tự luận CHỈ được là bội số của 0,25 (0 / 0,25 / 0,5 / …) và không vượt điểm tối đa của bước. Bước 0,25đ chỉ 0 hoặc 0,25; bước 0,5đ chỉ 0 / 0,25 / 0,5.
+- **Sửa 2 lớp:** (1) `GRADE_PROTOCOL.md` bước 4 — agent chấm phải cho đúng ngay từ đầu để khung ghi chú trên ảnh khớp điểm đã lưu; (2) code — `lib/scoring.ts` thêm `ESSAY_STEP` + `snapEssayStep` + `normalizeEssaySteps`, `lib/ai/jobs.ts` `submitJobResult` chuẩn hoá các bước về bội số 0,25 gần nhất rồi tính lại điểm tự luận + tổng điểm trước khi ghi (điểm trắc nghiệm giữ nguyên).
+- **Chưa sửa:** bài Cẩm Diên b6 vẫn lưu 0,125đ (tổng 2,63) — chờ bác quyết cho 0,25đ (tổng 2,75) hay 0đ (tổng 2,50) rồi mới PATCH + vẽ lại khung trên ảnh.
