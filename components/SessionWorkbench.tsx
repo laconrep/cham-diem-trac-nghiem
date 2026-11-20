@@ -243,6 +243,17 @@ export default function SessionWorkbench({
   // ---------- Kết quả chấm (poll nhẹ, hiện dần theo thứ tự chấm) ----------
   const [items, setItems] = useState<ResultItem[]>([]);
   const [jobs, setJobs] = useState<JobInfo[]>([]);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+
+  // Bấm Esc để đóng ảnh phóng to.
+  useEffect(() => {
+    if (!lightboxUrl) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setLightboxUrl(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lightboxUrl]);
   const [gradeMsg, setGradeMsg] = useState("");
 
   const refreshResults = useCallback(async () => {
@@ -500,17 +511,17 @@ export default function SessionWorkbench({
                             {result.annotated_image_url && (
                               <div className="w-[calc(50%-8px)] min-w-[280px] shrink-0">
                                 <p className="text-sm font-semibold">Ảnh trắc nghiệm đã chấm (xanh lá = chọn đúng, đỏ = chọn sai, vàng = đáp án đúng):</p>
-                                <a href={result.annotated_image_url} target="_blank" rel="noreferrer">
-                                  <img src={result.annotated_image_url} alt="Ảnh đã chấm" className="mt-1 max-h-80 w-full rounded border object-contain" />
-                                </a>
+                                <button type="button" onClick={() => setLightboxUrl(result.annotated_image_url)} className="mt-1 block w-full cursor-zoom-in" title="Bấm để xem to">
+                                  <img src={result.annotated_image_url} alt="Ảnh đã chấm" className="max-h-80 w-full rounded border object-contain" />
+                                </button>
                               </div>
                             )}
                             {result.annotated_essay_image_url && (
                               <div className="w-[calc(50%-8px)] min-w-[280px] shrink-0">
                                 <p className="text-sm font-semibold">Ảnh tự luận đã chấm (khung ghi chú từng bước barem, đỏ = điểm, vàng = chỗ sai):</p>
-                                <a href={result.annotated_essay_image_url} target="_blank" rel="noreferrer">
+                                <button type="button" onClick={() => setLightboxUrl(result.annotated_essay_image_url)} className="mt-1 block w-full cursor-zoom-in" title="Bấm để xem to">
                                   <img src={result.annotated_essay_image_url} alt="Ảnh tự luận đã chấm" className="mt-1 max-h-80 w-full rounded border object-contain" />
-                                </a>
+                                </button>
                               </div>
                             )}
                           </div>
@@ -587,6 +598,27 @@ export default function SessionWorkbench({
           </ul>
         )}
       </section>
+      {lightboxUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
+          onClick={() => setLightboxUrl(null)}
+        >
+          <button
+            type="button"
+            aria-label="Đóng"
+            onClick={() => setLightboxUrl(null)}
+            className="absolute right-4 top-4 rounded-full bg-white px-3.5 py-2 text-lg font-bold leading-none text-black hover:bg-slate-200"
+          >
+            ✕
+          </button>
+          <img
+            src={lightboxUrl}
+            alt="Ảnh đã chấm phóng to"
+            className="max-h-full max-w-full rounded object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   );
 }
