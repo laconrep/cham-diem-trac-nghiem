@@ -495,61 +495,72 @@ export default function SessionWorkbench({
                           <span>Tự luận: <b>{result.score_essay !== null ? Number(result.score_essay).toFixed(2) : "—"}</b></span>
                           {result.per_question?.exam_code && <span> · Mã đề: <b>{result.per_question.exam_code}</b></span>}
                         </div>
-                        {result.annotated_image_url && (
-                          <div className="mt-2">
-                            <p className="text-sm font-semibold">Ảnh trắc nghiệm đã chấm (xanh lá = chọn đúng, đỏ = chọn sai, vàng = đáp án đúng):</p>
-                            <a href={result.annotated_image_url} target="_blank" rel="noreferrer">
-                              <img src={result.annotated_image_url} alt="Ảnh đã chấm" className="mt-1 max-h-80 rounded border" />
-                            </a>
+                        {(result.annotated_image_url || result.annotated_essay_image_url) && (
+                          <div className="mt-2 flex gap-4 overflow-x-auto pb-1">
+                            {result.annotated_image_url && (
+                              <div className="w-[calc(50%-8px)] min-w-[280px] shrink-0">
+                                <p className="text-sm font-semibold">Ảnh trắc nghiệm đã chấm (xanh lá = chọn đúng, đỏ = chọn sai, vàng = đáp án đúng):</p>
+                                <a href={result.annotated_image_url} target="_blank" rel="noreferrer">
+                                  <img src={result.annotated_image_url} alt="Ảnh đã chấm" className="mt-1 max-h-80 w-full rounded border object-contain" />
+                                </a>
+                              </div>
+                            )}
+                            {result.annotated_essay_image_url && (
+                              <div className="w-[calc(50%-8px)] min-w-[280px] shrink-0">
+                                <p className="text-sm font-semibold">Ảnh tự luận đã chấm (khung ghi chú từng bước barem, đỏ = điểm, vàng = chỗ sai):</p>
+                                <a href={result.annotated_essay_image_url} target="_blank" rel="noreferrer">
+                                  <img src={result.annotated_essay_image_url} alt="Ảnh tự luận đã chấm" className="mt-1 max-h-80 w-full rounded border object-contain" />
+                                </a>
+                              </div>
+                            )}
                           </div>
                         )}
-                        {result.per_question && result.per_question.items.length > 0 && (
-                          <div className="mt-3 overflow-x-auto">
-                            <table className="w-full border-collapse text-sm">
-                              <thead>
-                                <tr className="bg-slate-800 text-white">
-                                  <th className="border px-2 py-1">Câu</th>
-                                  <th className="border px-2 py-1">HS chọn</th>
-                                  <th className="border px-2 py-1">Đáp án đúng</th>
-                                  <th className="border px-2 py-1">Kết quả</th>
-                                  <th className="border px-2 py-1">Điểm</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {result.per_question.items.map((it) => (
-                                  <tr key={it.q} className={it.is_correct === true ? "bg-green-50" : it.is_correct === false ? "bg-red-50" : "bg-amber-50"}>
-                                    <td className="border px-2 py-1 text-center font-semibold">{it.q}</td>
-                                    <td className="border px-2 py-1 text-center">{it.student ?? "—"}</td>
-                                    <td className="border px-2 py-1 text-center">{it.correct}</td>
-                                    <td className="border px-2 py-1 text-center">
-                                      {it.is_correct === true ? "✓ Đúng" : it.is_correct === false ? "✗ Sai" : "? Không xác định"}
-                                    </td>
-                                    <td className="border px-2 py-1 text-center">{it.points.toFixed(2)}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        )}
-                        {result.per_question && result.per_question.essay_steps.length > 0 && (
-                          <div className="mt-3">
-                            <p className="text-sm font-semibold">Tự luận — điểm từng bước:</p>
-                            <ul className="mt-1 list-disc pl-5 text-sm">
-                              {result.per_question.essay_steps.map((s, i) => (
-                                <li key={i}>
-                                  {s.step}: {s.awarded}/{s.points}đ{s.note ? ` — ${s.note}` : ""}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                        {result.annotated_essay_image_url && (
-                          <div className="mt-2">
-                            <p className="text-sm font-semibold">Ảnh tự luận đã chấm (khung ghi chú từng bước barem, đỏ = điểm, vàng = chỗ sai):</p>
-                            <a href={result.annotated_essay_image_url} target="_blank" rel="noreferrer">
-                              <img src={result.annotated_essay_image_url} alt="Ảnh tự luận đã chấm" className="mt-1 max-h-80 rounded border" />
-                            </a>
-                          </div>
+                        {result.per_question && (result.per_question.items.length > 0 || result.per_question.essay_steps.length > 0) && (
+                          <details className="mt-3 rounded-lg border border-slate-200 bg-slate-50">
+                            <summary className="cursor-pointer px-3 py-2 text-sm font-semibold text-slate-800">Chấm chi tiết</summary>
+                            <div className="border-t border-slate-200 px-3 py-2">
+                              {result.per_question.items.length > 0 && (
+                                <div className="overflow-x-auto">
+                                  <table className="w-full border-collapse text-sm">
+                                    <thead>
+                                      <tr className="bg-slate-800 text-white">
+                                        <th className="border px-2 py-1">Câu</th>
+                                        <th className="border px-2 py-1">HS chọn</th>
+                                        <th className="border px-2 py-1">Đáp án đúng</th>
+                                        <th className="border px-2 py-1">Kết quả</th>
+                                        <th className="border px-2 py-1">Điểm</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {result.per_question.items.map((it) => (
+                                        <tr key={it.q} className={it.is_correct === true ? "bg-green-50" : it.is_correct === false ? "bg-red-50" : "bg-amber-50"}>
+                                          <td className="border px-2 py-1 text-center font-semibold">{it.q}</td>
+                                          <td className="border px-2 py-1 text-center">{it.student ?? "—"}</td>
+                                          <td className="border px-2 py-1 text-center">{it.correct}</td>
+                                          <td className="border px-2 py-1 text-center">
+                                            {it.is_correct === true ? "✓ Đúng" : it.is_correct === false ? "✗ Sai" : "? Không xác định"}
+                                          </td>
+                                          <td className="border px-2 py-1 text-center">{it.points.toFixed(2)}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                              {result.per_question.essay_steps.length > 0 && (
+                                <div className="mt-3">
+                                  <p className="text-sm font-semibold">Tự luận — điểm từng bước:</p>
+                                  <ul className="mt-1 list-disc pl-5 text-sm">
+                                    {result.per_question.essay_steps.map((s, i) => (
+                                      <li key={i}>
+                                        {s.step}: {s.awarded}/{s.points}đ{s.note ? ` — ${s.note}` : ""}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
+                          </details>
                         )}
                         {result.feedback && <p className="mt-2 text-sm text-slate-700">{result.feedback}</p>}
                         {!result.approved && result.status === "ready" && (
