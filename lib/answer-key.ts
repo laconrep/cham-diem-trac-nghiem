@@ -386,9 +386,11 @@ function extractEssayBaremFromHtml(html: string): EssayBaremStep[] {
 }
 
 /**
- * Tách mọi bước barem lớn hơn 0,25 thành nhiều bước 0,25 (nội dung giữ nguyên
- * cho từng bước con; phần lẻ nếu có giữ thành 1 bước cuối để tổng điểm không đổi).
- * Vd bước 0,5 -> 2 bước 0,25; bước 1,0 -> 4 bước 0,25.
+ * Tách mọi bước barem lớn hơn 0,25 thành nhiều bước 0,25, đồng thời tách
+ * NỘI DUNG của bước thành từng phần tương ứng (theo dấu ";" rồi "." rồi ","
+ * rồi "và") để mỗi bước 0,25 có một ý riêng, không trùng nhau. Phần lẻ điểm
+ * nếu có giữ thành 1 bước cuối để tổng điểm không đổi.
+ * Vd bước 0,5 -> 2 bước 0,25 với 2 nội dung khác nhau; bước 1,0 -> 4 bước.
  */
 function splitStepsToQuarter(steps: EssayBaremStep[]): EssayBaremStep[] {
   const out: EssayBaremStep[] = [];
@@ -397,14 +399,61 @@ function splitStepsToQuarter(steps: EssayBaremStep[]): EssayBaremStep[] {
       out.push(s);
       continue;
     }
+    const chunks: number[] = [];
     let remaining = Math.round(s.points * 100) / 100;
     while (remaining > 0.25) {
-      out.push({ id: "", content: s.content, points: 0.25 });
+      chunks.push(0.25);
       remaining = Math.round((remaining - 0.25) * 100) / 100;
     }
-    if (remaining > 0) out.push({ id: "", content: s.content, points: remaining });
+    if (remaining > 0) chunks.push(remaining);
+    const contents = splitContentChunks(s.content, chunks.length);
+    chunks.forEach((pts, i) => out.push({ id: "", content: contents[i], points: pts }));
   }
   return out.map((s, i) => ({ ...s, id: `b${i + 1}` }));
+}
+
+/**
+ * Tách nội dung một bước barem thành n phần liên tiếp, mỗi phần một ý riêng.
+ * Giữ nguyên phần đầu dạng "... — Tên ý:" (hoặc "Tên ý:") cho mọi phần con,
+ * chỉ tách phần chi tiết phía sau. Tách theo mức phân cách giảm dần
+ * ("; " -> ". " -> ", " -> " và "); không tách được thì giữ nguyên nội dung.
+ */
+function splitContentChunks(content: string, n: number): string[] {
+  if (n <= 1) return [content];
+  let head = "";
+  let detail = content;
+  const m1 = content.match(/^(.*?[—–-]\s*[^:]{1,60}):\s+(.+)$/s);
+  const m2 = content.match(/^([^:]{1,60}):\s+(.+)$/s);
+  if (m1) {
+    head = `${m1[1]}: `;
+    detail = m1[2];
+  } else if (m2) {
+    head = `${m2[1]}: `;
+    detail = m2[2];
+  }
+  const separators: { re: RegExp; join: string }[] = [
+    { re: /;\s*/, join: "; " },
+    { re: /\.\s+/, join: ". " },
+    { re: /,\s+/, join: ", " },
+    { re: /\s+và\s+/, join: " và " },
+  ];
+  for (const sep of separators) {
+    const parts = detail.split(sep.re).map((p) => p.trim()).filter(Boolean);
+    if (parts.length >= n) {
+      const chunks: string[] = [];
+      const base = Math.floor(parts.length / n);
+      let extra = parts.length % n;
+      let idx = 0;
+      for (let i = 0; i < n; i++) {
+        const size = base + (extra > 0 ? 1 : 0);
+        if (extra > 0) extra--;
+        chunks.push(head + parts.slice(idx, idx + size).join(sep.join));
+        idx += size;
+      }
+      return chunks;
+    }
+  }
+  return Array(n).fill(content);
 }
 
 /**
