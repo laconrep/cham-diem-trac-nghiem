@@ -194,6 +194,8 @@ export default function NewSessionPage() {
             disabled={loading}
             onChange={(e) => {
               const f = e.target.files?.[0];
+              // Xóa giá trị ô chọn file để chọn lại CÙNG một file vẫn đọc lại được.
+              e.target.value = "";
               if (f) void handleFile(f);
             }}
             className="mt-1 w-full text-sm"
