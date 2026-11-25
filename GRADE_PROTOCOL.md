@@ -118,3 +118,20 @@ Với MỖI bài nộp được giao:
 - Ảnh hay xoay — PIL xoay trước khi đọc.
 - Kiểm job xong PHẢI đọc luôn nội dung feedback, không chỉ điểm/trạng thái.
 - Monitor đếm cả `approved` vào số hoàn thành (ready+approved+error == total mới done).
+
+## Job tách ý barem tự luận (từ 25/11/2026)
+
+- GV nạp file Word ở trang tạo phiên → app tạo job trong `cdtn_barem_jobs`
+  (nguyên văn phần tự luận + bản tách máy hiển thị tạm) → hook
+  `cdtn-grade-watch` đánh thức (chỉ đọc GET + wake, KHÔNG claim được vì
+  môi trường hook bị proxy chặn PATCH/POST) → worker báo tin → main agent:
+  MCP `claim_barem_job` (worker mặc định `muse-main`) → đọc `raw_text` →
+  tách thành từng ý 0,25 theo ý nghĩa, tổng điểm giữ nguyên → MCP
+  `submit_barem_result`. Trang tạo phiên poll 5s, tối đa 3 phút; quá hạn
+  giữ bản tách máy, có nút "Nhờ AI tách lại".
+- Cổng MCP: POST https://cham-diem-trac-nghiem.vercel.app/api/mcp,
+  header Authorization Bearer <AI_WORKER_TOKEN> (file
+  ~/.config/muse-chat-grader/ai_worker_token_cdtn, 0600 — không in).
+- Supabase RIÊNG của app: https://ofidlkjcjyzwlfnzfzur.supabase.co,
+  service key file ~/.config/muse-chat-grader/supabase_service_key_cdtn
+  (0600 — không in, không ghi đè file key của thaoluannhom).
