@@ -21,6 +21,7 @@ import {
 import {
   claimBaremJob,
   failBaremJob,
+  getBaremJob,
   listPendingBaremJobs,
   submitBaremResult,
 } from "@/lib/ai/barem-jobs";
@@ -168,6 +169,16 @@ const TOOLS = [
     },
   },
   {
+    name: "get_barem_job",
+    description:
+      "Đọc chi tiết 1 job barem: raw_text (nguyên văn phần tự luận), machine_barem (bản tách máy), trạng thái. Dùng khi job đã được claim sẵn (hook claim hộ) nên không claim lại được.",
+    inputSchema: {
+      type: "object",
+      properties: { jobId: { type: "string" } },
+      required: ["jobId"],
+    },
+  },
+  {
     name: "submit_barem_result",
     description:
       "Nộp barem tự luận đã tách: danh sách bước, mỗi bước gồm content (nội dung ý — tiêu chí chấm cụ thể) và points (điểm, bội số của 0,25; tách nhỏ đến từng ý 0,25 theo đúng ý nghĩa của đáp án, tổng điểm giữ nguyên như trong file). Giáo viên sẽ duyệt/sửa lại trên app trước khi lưu phiên.",
@@ -285,6 +296,11 @@ async function callTool(name: string, args: Record<string, unknown>, workerId: s
       const job = await claimBaremJob(jobId, workerId);
       if (!job)
         return toolText({ ok: false, error: "Job barem không còn chờ (đã có worker khác nhận hoặc sai id)" }, true);
+      return toolText({ ok: true, job });
+    }
+    case "get_barem_job": {
+      const job = await getBaremJob(jobId);
+      if (!job) return toolText({ ok: false, error: "Không tìm thấy job barem" }, true);
       return toolText({ ok: true, job });
     }
     case "submit_barem_result": {
