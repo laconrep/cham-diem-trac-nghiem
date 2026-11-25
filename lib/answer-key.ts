@@ -445,8 +445,9 @@ function extractEssayBaremFromProse(lines: string[]): EssayBaremStep[] {
 /**
  * Tách một ý tự luận dạng đoạn văn thành từng ý nhỏ kèm điểm tương ứng.
  * Văn bản ý thường có dạng "<đề bài>. Hướng dẫn chấm: <Tên ý> (X điểm): <chi tiết> <Tên ý 2> (Y điểm): <chi tiết>".
- * - Mỗi cụm "Tên ý (X điểm):" thành 1 bước; điểm cộng dồn nếu ngoặc ghi nhiều khoản
- *   (vd "(0,25 điểm cho nguồn gốc + 0,25 điểm cho quy trình)" = 0,5).
+ * - Mỗi cụm "Tên ý (X điểm):" thành 1 bước; ngoặc ghi nhiều khoản
+ *   (vd "(0,25 điểm cho nguồn gốc + 0,25 điểm cho quy trình)") bung thành
+ *   từng bước 0,25 riêng.
  * - Đoạn không ghi điểm (vd "Giống nhau: ...") nhận phần điểm còn thiếu của ý;
  *   nếu không còn thiếu thì ghép vào bước kế tiếp để khỏi mất nội dung.
  * - Không có "Hướng dẫn chấm" hoặc không có cụm điểm nào -> giữ nguyên 1 bước.
@@ -486,14 +487,16 @@ function splitProseIntoSteps(prefix: string, text: string, points: number): { co
 
 /**
  * Tách phần "Hướng dẫn chấm" thành các ý nhỏ: mỗi ý kết thúc bằng cụm
- * "(X điểm):" (điểm = tổng mọi số "N điểm" trong ngoặc). Đoạn mở đầu không
+ * "(X điểm):". Ngoặc điểm ghép "(0,25 điểm cho X + 0,25 điểm cho Y)" được
+ * bung thành từng ý riêng 0,25 (chi tiết chia theo từng khía cạnh
+ * "nguồn gốc — ...; quy trình — ...; giá thành — ..."). Đoạn mở đầu không
  * có cụm điểm (nếu có) trả về với points = null.
  */
 function splitGuideIntoItems(guide: string): { name: string; points: number | null; text: string }[] {
   const markerRe = /\(\s*([\d.,]+)\s*điểm([^)]*)\)\s*:/g;
   const matches = [...guide.matchAll(markerRe)];
   if (matches.length === 0) return [];
-  const items: { name: string; points: number | null; text: string }[] = [];
+  const raw: { name: string; paren: string; text: string }[] = [];
   let prevEnd = 0;
   matches.forEach((m, idx) => {
     const gap = guide.slice(prevEnd, m.index);
@@ -502,15 +505,53 @@ function splitGuideIntoItems(guide: string): { name: string; points: number | nu
     const name = (boundary >= 0 ? gap.slice(boundary + 2) : gap).trim();
     const prevDetail = boundary >= 0 ? gap.slice(0, boundary + 1).trim() : "";
     if (idx === 0) {
-      if (prevDetail) items.push({ name: "", points: null, text: prevDetail });
+      if (prevDetail) raw.push({ name: "", paren: "", text: prevDetail });
     } else {
-      items[items.length - 1].text = prevDetail;
+      raw[raw.length - 1].text = prevDetail;
     }
-    const nums = [...m[0].matchAll(/([\d.,]+)\s*điểm/g)].map((x) => parseFloat(x[1].replace(",", ".")));
-    const pts = nums.reduce((a, b) => a + b, 0);
-    items.push({ name, points: Math.round(pts * 100) / 100, text: "" });
+    raw.push({ name, paren: m[0], text: "" });
     prevEnd = (m.index ?? 0) + m[0].length;
   });
-  items[items.length - 1].text = guide.slice(prevEnd).trim();
+  raw[raw.length - 1].text = guide.slice(prevEnd).trim();
+
+  // Bung ngoặc điểm ghép "(0,25 điểm cho X + 0,25 điểm cho Y)" thành từng ý riêng.
+  const items: { name: string; points: number | null; text: string }[] = [];
+  for (const r of raw) {
+    if (!r.paren) {
+      items.push({ name: r.name, points: null, text: r.text });
+      continue;
+    }
+    const inner = r.paren.replace(/^\(\s*/, "").replace(/\)\s*:?\s*$/, "");
+    const subs = inner
+      .split("+")
+      .map((part) => {
+        const mm = part.trim().match(/^([\d.,]+)\s*điểm\s*(?:cho\s+(.+))?$/);
+        return mm ? { pts: parseFloat(mm[1].replace(",", ".")), label: (mm[2] ?? "").trim() } : null;
+      })
+      .filter((s): s is { pts: number; label: string } => s !== null);
+    if (subs.length <= 1) {
+      const pts = subs.reduce((a, s) => a + s.pts, 0);
+      items.push({ name: r.name, points: Math.round(pts * 100) / 100, text: r.text });
+      continue;
+    }
+    // Chia chi tiết theo từng khía cạnh "nguồn gốc — ...; quy trình — ...; giá thành — ...".
+    const segments = r.text.split(/;\s*/).map((s) => s.trim()).filter(Boolean);
+    const buckets: string[][] = subs.map(() => []);
+    for (const seg of segments) {
+      const head = (seg.split(/\s*[—–-]\s*/)[0] ?? "").toLowerCase();
+      let bi = subs.findIndex(
+        (s) => s.label && (s.label.toLowerCase().includes(head) || head.includes(s.label.toLowerCase()))
+      );
+      if (bi === -1) bi = buckets.length - 1;
+      buckets[bi].push(seg);
+    }
+    subs.forEach((s, i) => {
+      items.push({
+        name: s.label ? `${r.name} — ${s.label}` : r.name,
+        points: Math.round(s.pts * 100) / 100,
+        text: buckets[i].join("; "),
+      });
+    });
+  }
   return items;
 }
