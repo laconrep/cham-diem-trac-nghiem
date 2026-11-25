@@ -401,15 +401,16 @@ function extractEssayBaremFromProse(lines: string[]): EssayBaremStep[] {
   const qRe = /^câu\s*(\d{1,3})\s*[.:]?\s*\(\s*([\d.,]+)\s*điểm\s*\)\s*:?\s*(.*)$/i;
   const subRe = /^([a-d])[.)]\s*\(\s*([\d.,]+)\s*điểm\s*\)\s*(.*)$/i;
   const steps: EssayBaremStep[] = [];
+  const pushProseSteps = (prefix: string, text: string, points: number) => {
+    for (const s of splitProseIntoSteps(prefix, text, points)) {
+      steps.push({ id: `b${steps.length + 1}`, content: s.content.replace(/\|/g, "/"), points: s.points });
+    }
+  };
   let currentQ = "";
   let pendingQ: { q: string; points: number; text: string } | null = null;
   const flushPending = () => {
     if (pendingQ && pendingQ.text.trim()) {
-      steps.push({
-        id: `b${steps.length + 1}`,
-        content: `Câu ${pendingQ.q}: ${pendingQ.text.trim()}`.replace(/\|/g, "/"),
-        points: pendingQ.points,
-      });
+      pushProseSteps(`Câu ${pendingQ.q}`, pendingQ.text.trim(), pendingQ.points);
     }
     pendingQ = null;
   };
@@ -430,11 +431,7 @@ function extractEssayBaremFromProse(lines: string[]): EssayBaremStep[] {
       pendingQ = null;
       const pts = parsePts(sm[2]);
       if (!Number.isNaN(pts) && pts > 0) {
-        steps.push({
-          id: `b${steps.length + 1}`,
-          content: `Câu ${currentQ}${sm[1].toLowerCase()}: ${(sm[3] ?? "").trim()}`.replace(/\|/g, "/"),
-          points: pts,
-        });
+        pushProseSteps(`Câu ${currentQ}${sm[1].toLowerCase()}`, (sm[3] ?? "").trim(), pts);
       }
       continue;
     }
@@ -443,4 +440,77 @@ function extractEssayBaremFromProse(lines: string[]): EssayBaremStep[] {
   }
   flushPending();
   return steps;
+}
+
+/**
+ * Tách một ý tự luận dạng đoạn văn thành từng ý nhỏ kèm điểm tương ứng.
+ * Văn bản ý thường có dạng "<đề bài>. Hướng dẫn chấm: <Tên ý> (X điểm): <chi tiết> <Tên ý 2> (Y điểm): <chi tiết>".
+ * - Mỗi cụm "Tên ý (X điểm):" thành 1 bước; điểm cộng dồn nếu ngoặc ghi nhiều khoản
+ *   (vd "(0,25 điểm cho nguồn gốc + 0,25 điểm cho quy trình)" = 0,5).
+ * - Đoạn không ghi điểm (vd "Giống nhau: ...") nhận phần điểm còn thiếu của ý;
+ *   nếu không còn thiếu thì ghép vào bước kế tiếp để khỏi mất nội dung.
+ * - Không có "Hướng dẫn chấm" hoặc không có cụm điểm nào -> giữ nguyên 1 bước.
+ */
+function splitProseIntoSteps(prefix: string, text: string, points: number): { content: string; points: number }[] {
+  const guideSplit = text.split(/hướng\s*dẫn\s*chấm\s*:/i);
+  if (guideSplit.length < 2) return [{ content: `${prefix}: ${text.trim()}`, points }];
+  const questionPart = guideSplit[0].trim();
+  const guide = guideSplit.slice(1).join(" ").trim();
+  const items = splitGuideIntoItems(guide);
+  if (items.length === 0) return [{ content: `${prefix}: ${text.trim()}`, points }];
+  const explicitSum = items.reduce((a, it) => a + (it.points ?? 0), 0);
+  const remainder = Math.round((points - explicitSum) * 100) / 100;
+  const out: { content: string; points: number }[] = [];
+  let pendingText = ""; // đoạn không ghi điểm, chờ ghép vào bước kế tiếp
+  let remainderUsed = false;
+  for (const it of items) {
+    if (it.points === null) {
+      if (remainder > 0 && !remainderUsed) {
+        remainderUsed = true;
+        out.push({ content: `${prefix}: ${questionPart} — ${it.text}`.trim(), points: remainder });
+      } else {
+        pendingText = pendingText ? `${pendingText} ${it.text}` : it.text;
+      }
+      continue;
+    }
+    const detail = pendingText ? `${pendingText} ${it.name}: ${it.text}` : `${it.name}: ${it.text}`;
+    pendingText = "";
+    out.push({
+      content: out.length === 0 ? `${prefix}: ${questionPart} — ${detail}` : `${prefix} — ${detail}`,
+      points: it.points,
+    });
+  }
+  if (pendingText && out.length > 0) out[out.length - 1].content += ` ${pendingText}`;
+  return out.length > 0 ? out : [{ content: `${prefix}: ${text.trim()}`, points }];
+}
+
+/**
+ * Tách phần "Hướng dẫn chấm" thành các ý nhỏ: mỗi ý kết thúc bằng cụm
+ * "(X điểm):" (điểm = tổng mọi số "N điểm" trong ngoặc). Đoạn mở đầu không
+ * có cụm điểm (nếu có) trả về với points = null.
+ */
+function splitGuideIntoItems(guide: string): { name: string; points: number | null; text: string }[] {
+  const markerRe = /\(\s*([\d.,]+)\s*điểm([^)]*)\)\s*:/g;
+  const matches = [...guide.matchAll(markerRe)];
+  if (matches.length === 0) return [];
+  const items: { name: string; points: number | null; text: string }[] = [];
+  let prevEnd = 0;
+  matches.forEach((m, idx) => {
+    const gap = guide.slice(prevEnd, m.index);
+    // Tên ý nằm ngay trước ngoặc điểm, sau dấu chấm/phẩy cuối cùng của đoạn trước.
+    const boundary = Math.max(gap.lastIndexOf(". "), gap.lastIndexOf("; "));
+    const name = (boundary >= 0 ? gap.slice(boundary + 2) : gap).trim();
+    const prevDetail = boundary >= 0 ? gap.slice(0, boundary + 1).trim() : "";
+    if (idx === 0) {
+      if (prevDetail) items.push({ name: "", points: null, text: prevDetail });
+    } else {
+      items[items.length - 1].text = prevDetail;
+    }
+    const nums = [...m[0].matchAll(/([\d.,]+)\s*điểm/g)].map((x) => parseFloat(x[1].replace(",", ".")));
+    const pts = nums.reduce((a, b) => a + b, 0);
+    items.push({ name, points: Math.round(pts * 100) / 100, text: "" });
+    prevEnd = (m.index ?? 0) + m[0].length;
+  });
+  items[items.length - 1].text = guide.slice(prevEnd).trim();
+  return items;
 }

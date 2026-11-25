@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { AnswerKey, QuestionPart } from "@/lib/types";
 import { graduationTemplate } from "@/lib/answer-key";
@@ -25,18 +25,27 @@ export default function NewSessionPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-  const [essayText, setEssayText] = useState("");
+  // Barem tự luận dạng từng ý + điểm (điểm giữ dạng chữ để gõ được "0,5").
+  const [essaySteps, setEssaySteps] = useState<{ content: string; points: string }[]>([]);
   // Cách tính điểm Đúng/Sai: false = mặc định mỗi ý đúng 0,25đ;
   // true = "chấm theo mẫu bộ" (thang Bộ theo số ý đúng).
   const [p2BoMode, setP2BoMode] = useState(false);
-  // Ô barem tự giãn cao theo nội dung để hiện đủ tất cả các bước (không cuộn).
-  const essayRef = useRef<HTMLTextAreaElement | null>(null);
-  useEffect(() => {
-    const el = essayRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 480)}px`;
-  }, [essayText, answerKey]);
+  const essayTotal = useMemo(
+    () => essaySteps.reduce((a, s) => a + (parseFloat(s.points.replace(",", ".")) || 0), 0),
+    [essaySteps]
+  );
+
+  function updateEssayStep(idx: number, patch: Partial<{ content: string; points: string }>) {
+    setEssaySteps((prev) => prev.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
+  }
+
+  function addEssayStep() {
+    setEssaySteps((prev) => [...prev, { content: "", points: "0.5" }]);
+  }
+
+  function removeEssayStep(idx: number) {
+    setEssaySteps((prev) => prev.filter((_, i) => i !== idx));
+  }
 
   const codes = useMemo(() => answerKey?.codes ?? [], [answerKey]);
 
@@ -56,13 +65,9 @@ export default function NewSessionPage() {
       setWarnings((data.warnings ?? []) as Warning[]);
       // File tải lên: mặc định Đúng/Sai 0,25đ/ý (GV tick "mẫu bộ" nếu muốn thang Bộ).
       setP2BoMode(false);
-      // Barem tự luận trong file Word (nếu có) tự điền vào ô bên dưới — khỏi nhập tay.
+      // Barem tự luận trong file Word (nếu có) tự tách thành từng ý + điểm bên dưới.
       const eb = (data.answerKey?.essayBarem ?? []) as { content: string; points: number }[];
-      if (eb.length > 0) {
-        setEssayText(eb.map((s) => `${s.content} | ${s.points}`).join("\n"));
-      } else {
-        setEssayText("");
-      }
+      setEssaySteps(eb.map((s) => ({ content: s.content, points: String(s.points) })));
       if ((data.answerKey?.questions?.length ?? 0) === 0) {
         setError("File Word không có câu hỏi nào đọc được. Kiểm tra lại bảng đáp án (cột = mã đề, dòng = câu hỏi).");
       }
@@ -124,15 +129,14 @@ export default function NewSessionPage() {
     if (empty.length > 0) {
       if (!window.confirm(`Còn ${empty.length} câu chưa có đáp án (vd câu ${empty[0].q}). Vẫn lưu phiên?`)) return;
     }
-    // Barem tự luận: mỗi dòng "Nội dung | điểm".
-    const essayBarem = essayText
-      .split("\n")
-      .map((l) => l.trim())
-      .filter(Boolean)
-      .map((line, i) => {
-        const [content, pts] = line.split("|").map((s) => s.trim());
-        return { id: `b${i + 1}`, content: content || line, points: parseFloat((pts ?? "").replace(",", ".")) || 0 };
-      });
+    // Barem tự luận: từng ý + điểm, bỏ ý trống.
+    const essayBarem = essaySteps
+      .filter((s) => s.content.trim())
+      .map((s, i) => ({
+        id: `b${i + 1}`,
+        content: s.content.trim(),
+        points: parseFloat(s.points.replace(",", ".")) || 0,
+      }));
     setSaving(true);
     setError("");
     try {
@@ -303,15 +307,48 @@ export default function NewSessionPage() {
             ))}
 
             <h3 className="mt-6 text-sm font-bold text-teal-800">Barem tự luận (Phần IV) — không bắt buộc</h3>
-            <p className="text-xs text-slate-500">Đã tự điền từ file Word nếu file có mục barem tự luận — sửa trực tiếp tại đây nếu cần. Mỗi dòng một bước, dạng “Nội dung bước | điểm” (vd: “Viết đúng phương trình | 0.5”).</p>
-            <textarea
-              ref={essayRef}
-              value={essayText}
-              onChange={(e) => setEssayText(e.target.value)}
-              rows={3}
-              placeholder={"Viết đúng phương trình | 0.5\nTính đúng kết quả | 0.5"}
-              className="mt-1 w-full resize-none overflow-hidden rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            />
+            <p className="text-xs text-slate-500">Đã tự tách từ file Word thành từng ý + điểm — sửa trực tiếp tại đây, thêm hoặc xóa ý nếu cần. Điểm nhỏ nhất 0,25.</p>
+            <div className="mt-2 space-y-2">
+              {essaySteps.map((s, i) => (
+                <div key={i} className="flex items-start gap-2">
+                  <textarea
+                    value={s.content}
+                    onChange={(e) => updateEssayStep(i, { content: e.target.value })}
+                    rows={2}
+                    placeholder="Nội dung ý (vd: Viết đúng phương trình)"
+                    className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  />
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={s.points}
+                    onChange={(e) => updateEssayStep(i, { points: e.target.value })}
+                    title="Điểm của ý này"
+                    className="w-16 rounded-lg border border-slate-300 px-2 py-2 text-center text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeEssayStep(i)}
+                    title="Xóa ý này"
+                    className="rounded-lg border border-slate-300 px-2 py-2 text-sm text-slate-500 hover:bg-red-50 hover:text-red-600"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="mt-2 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={addEssayStep}
+                className="rounded-lg border border-teal-700 px-3 py-1.5 text-sm font-semibold text-teal-700 hover:bg-teal-50"
+              >
+                + Thêm ý
+              </button>
+              <span className="text-xs text-slate-500">
+                Tổng điểm tự luận: <b>{Number(essayTotal.toFixed(2))}đ</b> ({essaySteps.length} ý)
+              </span>
+            </div>
           </div>
         )}
 
