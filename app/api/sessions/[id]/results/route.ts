@@ -6,13 +6,19 @@
 // chụp tiếp mà vẫn biết bài nào xong rồi:
 //   queued = Đang chờ chấm · grading = Đang chấm · done = Đã chấm xong · error = Lỗi
 import { getSupabase } from "@/lib/supabase";
+import { requireApiUser, checkSessionAccess, forbiddenResponse } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const auth = await requireApiUser();
+    if ("response" in auth) return auth.response;
+    const { user } = auth;
     const { id: sessionId } = await params;
+    const access = await checkSessionAccess(sessionId, user);
+    if (!access.allowed) return forbiddenResponse();
     const db = getSupabase();
     const { data: submissions, error } = await db
       .from("cdtn_submissions")

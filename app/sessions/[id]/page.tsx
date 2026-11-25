@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { getSupabase, supabaseConfigured } from "@/lib/supabase";
+import { getCurrentUser, checkSessionAccess } from "@/lib/auth";
 import SessionWorkbench from "@/components/SessionWorkbench";
 
 export const dynamic = "force-dynamic";
@@ -8,6 +10,17 @@ export default async function SessionDetailPage({ params }: { params: Promise<{ 
   const { id } = await params;
   if (!supabaseConfigured()) {
     return <p className="text-amber-800">Chưa cấu hình Supabase. Xem .env.example.</p>;
+  }
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  const access = await checkSessionAccess(id, user);
+  if (!access.allowed) {
+    return (
+      <div>
+        <p className="text-red-700">Bạn không có quyền xem phiên này (phiên thuộc giáo viên khác).</p>
+        <Link href="/" className="text-teal-800 underline">Về trang chủ</Link>
+      </div>
+    );
   }
   const db = getSupabase();
   const { data: session, error } = await db.from("cdtn_sessions").select("*").eq("id", id).single();

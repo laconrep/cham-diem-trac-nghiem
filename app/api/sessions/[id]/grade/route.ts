@@ -3,13 +3,19 @@
 // chấm vào job đó (không tạo job trùng). Các bài tải lên sau đó tự vào hàng
 // chờ qua /api/submissions nên GV không phải bấm lại từng lần.
 import { getSupabase } from "@/lib/supabase";
+import { requireApiUser, checkSessionAccess, forbiddenResponse } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const auth = await requireApiUser();
+    if ("response" in auth) return auth.response;
+    const { user } = auth;
     const { id: sessionId } = await params;
+    const access = await checkSessionAccess(sessionId, user);
+    if (!access.allowed) return forbiddenResponse();
     const db = getSupabase();
     const { data: session, error: sErr } = await db
       .from("cdtn_sessions")

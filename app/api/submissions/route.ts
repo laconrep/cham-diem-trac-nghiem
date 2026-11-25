@@ -4,6 +4,7 @@
 // KHÔNG chờ AI chấm xong. Bài mới tự vào hàng chờ của job đang chạy; nếu
 // không có job đang chạy thì tạo job mới (queued) cho các bài chưa chấm.
 import { getSupabase, getPublicUrl, PHOTO_BUCKET } from "@/lib/supabase";
+import { requireApiUser, checkSessionAccess, forbiddenResponse } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -48,10 +49,15 @@ async function ensureJobForSession(db: ReturnType<typeof getSupabase>, sessionId
 
 export async function POST(req: Request) {
   try {
+    const auth = await requireApiUser();
+    if ("response" in auth) return auth.response;
+    const { user } = auth;
     const form = await req.formData();
     const sessionId = String(form.get("session_id") ?? "");
     const files = form.getAll("files").filter((f): f is File => f instanceof File);
     if (!sessionId) return Response.json({ ok: false, error: "Thiếu phiên." }, { status: 400 });
+    const access = await checkSessionAccess(sessionId, user);
+    if (!access.allowed) return forbiddenResponse();
     if (files.length === 0) return Response.json({ ok: false, error: "Chưa có ảnh nào." }, { status: 400 });
     if (files.length > 5) return Response.json({ ok: false, error: "Mỗi bài tối đa 5 ảnh." }, { status: 400 });
     for (const f of files) {

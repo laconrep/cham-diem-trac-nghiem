@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { getSupabase, supabaseConfigured } from "@/lib/supabase";
+import { getCurrentUser, isAdmin } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -17,11 +19,24 @@ export default async function Home() {
       </div>
     );
   }
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
   const db = getSupabase();
-  const { data: sessions } = await db
+  // Giáo viên chỉ thấy phiên của mình; admin thấy tất cả.
+  let query = db
     .from("cdtn_sessions")
-    .select("id, title, status, created_at")
+    .select("id, title, status, owner_id, created_at")
     .order("created_at", { ascending: false });
+  if (!isAdmin(user)) query = query.eq("owner_id", user.id);
+  const { data: sessions } = await query;
+
+  // Admin: hiện email chủ phiên (tra từ danh sách tài khoản).
+  let ownerEmail = new Map<string, string>();
+  if (isAdmin(user)) {
+    const { data: users } = await db.auth.admin.listUsers({ perPage: 100 });
+    for (const u of users?.users ?? []) ownerEmail.set(u.id, u.email ?? "");
+  }
 
   return (
     <div>
@@ -31,6 +46,7 @@ export default async function Home() {
           <p className="mt-1 text-sm text-slate-600">
             Mỗi phiên: tải file Word đáp án → duyệt tiêu chí chấm → chụp bài học sinh → AI chấm
             ngầm → xuất Excel.
+            {isAdmin(user) ? " Bạn đang xem với quyền quản trị (thấy phiên của mọi giáo viên)." : ""}
           </p>
         </div>
         <Link
@@ -54,6 +70,9 @@ export default async function Home() {
                 </span>
                 <span className="mt-1 block text-xs text-slate-500">
                   Tạo lúc {new Date(s.created_at as string).toLocaleString("vi-VN")}
+                  {isAdmin(user) && s.owner_id
+                    ? ` · Chủ phiên: ${ownerEmail.get(s.owner_id as string) ?? s.owner_id}`
+                    : ""}
                 </span>
               </Link>
             </li>

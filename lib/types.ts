@@ -51,6 +51,8 @@ export interface SessionRow {
   answer_key: AnswerKey | null;
   criteria: AnswerKey | null;
   status: string;
+  /** Tài khoản giáo viên tạo phiên (migration 003) — null với phiên cũ chưa gán chủ. */
+  owner_id: string | null;
   created_at: string;
 }
 

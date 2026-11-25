@@ -2,6 +2,7 @@
 // 4 sheet theo thiết kế của cham_diem_core.py (ThS. Nguyễn Văn Sang).
 import { getSupabase } from "@/lib/supabase";
 import { buildSessionExcel, type ExportRow } from "@/lib/excel";
+import { requireApiUser, checkSessionAccess, forbiddenResponse } from "@/lib/auth";
 import type { AnswerKey } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -9,7 +10,12 @@ export const dynamic = "force-dynamic";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ sessionId: string }> }) {
   try {
+    const auth = await requireApiUser();
+    if ("response" in auth) return auth.response;
+    const { user } = auth;
     const { sessionId } = await params;
+    const access = await checkSessionAccess(sessionId, user);
+    if (!access.allowed) return forbiddenResponse();
     const db = getSupabase();
     const { data: session, error: sErr } = await db
       .from("cdtn_sessions")
