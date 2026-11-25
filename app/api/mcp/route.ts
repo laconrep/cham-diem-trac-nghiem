@@ -18,6 +18,12 @@ import {
   submitJobResult,
   type SubmitResultInput,
 } from "@/lib/ai/jobs";
+import {
+  claimBaremJob,
+  failBaremJob,
+  listPendingBaremJobs,
+  submitBaremResult,
+} from "@/lib/ai/barem-jobs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -145,6 +151,57 @@ const TOOLS = [
       required: ["jobId", "reason"],
     },
   },
+  {
+    name: "list_pending_barem_jobs",
+    description:
+      "Liệt kê các job tách ý + dựng barem tự luận đang chờ (trạng thái queued). Mỗi job chứa nguyên văn phần đáp án tự luận trong file Word của giáo viên.",
+    inputSchema: { type: "object", properties: { limit: { type: "number" } } },
+  },
+  {
+    name: "claim_barem_job",
+    description:
+      "Nhận một job barem để tách ý (nguyên tử — một job chỉ một worker nhận được). Trả về raw_text (nguyên văn phần tự luận) và machine_barem (bản tách máy để tham khảo).",
+    inputSchema: {
+      type: "object",
+      properties: { jobId: { type: "string" } },
+      required: ["jobId"],
+    },
+  },
+  {
+    name: "submit_barem_result",
+    description:
+      "Nộp barem tự luận đã tách: danh sách bước, mỗi bước gồm content (nội dung ý — tiêu chí chấm cụ thể) và points (điểm, bội số của 0,25; tách nhỏ đến từng ý 0,25 theo đúng ý nghĩa của đáp án, tổng điểm giữ nguyên như trong file). Giáo viên sẽ duyệt/sửa lại trên app trước khi lưu phiên.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        jobId: { type: "string" },
+        steps: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              content: { type: "string" },
+              points: { type: "number" },
+            },
+            required: ["content", "points"],
+          },
+        },
+      },
+      required: ["jobId", "steps"],
+    },
+  },
+  {
+    name: "fail_barem_job",
+    description: "Báo job barem không xử lý được, kèm lý do. App sẽ giữ bản tách máy cho giáo viên sửa tay.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        jobId: { type: "string" },
+        reason: { type: "string" },
+      },
+      required: ["jobId", "reason"],
+    },
+  },
 ] as const;
 
 function toolText(payload: unknown, isError = false) {
@@ -217,6 +274,28 @@ async function callTool(name: string, args: Record<string, unknown>, workerId: s
         workerId,
         typeof args.reason === "string" ? args.reason : "Không rõ lý do",
         typeof args.submissionId === "string" ? args.submissionId : undefined
+      );
+      return toolText(res, !res.ok);
+    }
+    case "list_pending_barem_jobs": {
+      const jobs = await listPendingBaremJobs(typeof args.limit === "number" ? args.limit : 20);
+      return toolText({ jobs });
+    }
+    case "claim_barem_job": {
+      const job = await claimBaremJob(jobId, workerId);
+      if (!job)
+        return toolText({ ok: false, error: "Job barem không còn chờ (đã có worker khác nhận hoặc sai id)" }, true);
+      return toolText({ ok: true, job });
+    }
+    case "submit_barem_result": {
+      const res = await submitBaremResult(jobId, workerId, args.steps);
+      return toolText(res, !res.ok);
+    }
+    case "fail_barem_job": {
+      const res = await failBaremJob(
+        jobId,
+        workerId,
+        typeof args.reason === "string" ? args.reason : "Không rõ lý do"
       );
       return toolText(res, !res.ok);
     }

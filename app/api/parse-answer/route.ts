@@ -26,6 +26,7 @@ export async function POST(req: Request) {
       answerKey: res.answerKey,
       warnings: res.warnings,
       tablesFound: res.tablesFound,
+      essayRawText: res.essayRawText,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Không đọc được file Word.";

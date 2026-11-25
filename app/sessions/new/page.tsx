@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { AnswerKey, QuestionPart } from "@/lib/types";
 import { graduationTemplate } from "@/lib/answer-key";
@@ -27,6 +27,75 @@ export default function NewSessionPage() {
   const [saving, setSaving] = useState(false);
   // Barem tự luận dạng từng ý + điểm (điểm giữ dạng chữ để gõ được "0,5").
   const [essaySteps, setEssaySteps] = useState<{ content: string; points: string }[]>([]);
+  // Trạng thái nhờ AI tách ý qua MCP: idle (chưa nhờ) / waiting (đang chờ AI)
+  // / done (AI đã tách xong, đã thay vào danh sách) / fallback (quá hạn chờ
+  // hoặc lỗi — giữ bản tách máy).
+  const [baremAiStatus, setBaremAiStatus] = useState<"idle" | "waiting" | "done" | "fallback">("idle");
+  const essayRawRef = useRef("");
+  const baremPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  function stopBaremPoll() {
+    if (baremPollRef.current) {
+      clearInterval(baremPollRef.current);
+      baremPollRef.current = null;
+    }
+  }
+
+  useEffect(() => stopBaremPoll, []);
+
+  /** Nhờ AI tách ý: tạo job barem rồi poll tối đa 3 phút; xong thì thay danh
+   *  sách ý bằng bản AI, quá hạn/lỗi thì giữ bản tách máy đang hiển thị. */
+  async function requestAiBarem(rawText: string, machineBarem: { content: string; points: number }[]) {
+    stopBaremPoll();
+    essayRawRef.current = rawText;
+    setBaremAiStatus("waiting");
+    try {
+      const res = await fetch("/api/barem-jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rawText, machineBarem }),
+      });
+      const data = await res.json();
+      const jobId = data?.jobId as string | null;
+      if (!data?.ok || !jobId) {
+        setBaremAiStatus("fallback");
+        return;
+      }
+      let tries = 0;
+      baremPollRef.current = setInterval(async () => {
+        tries++;
+        try {
+          const r = await fetch(`/api/barem-jobs/${jobId}`);
+          const d = await r.json();
+          if (d?.ok && d.status === "done" && Array.isArray(d.resultBarem) && d.resultBarem.length > 0) {
+            stopBaremPoll();
+            setEssaySteps(
+              (d.resultBarem as { content: string; points: number }[]).map((s) => ({
+                content: s.content,
+                points: String(s.points),
+              }))
+            );
+            setBaremAiStatus("done");
+            return;
+          }
+          if (d?.ok && d.status === "error") {
+            stopBaremPoll();
+            setBaremAiStatus("fallback");
+            return;
+          }
+        } catch {
+          // Lỗi mạng tạm thời: thử tiếp ở lượt poll sau.
+        }
+        if (tries >= 36) {
+          // Quá 3 phút chưa xong: giữ bản tách máy, GV sửa tay hoặc nhờ lại.
+          stopBaremPoll();
+          setBaremAiStatus("fallback");
+        }
+      }, 5000);
+    } catch {
+      setBaremAiStatus("fallback");
+    }
+  }
   // Cách tính điểm Đúng/Sai: false = mặc định mỗi ý đúng 0,25đ;
   // true = "chấm theo mẫu bộ" (thang Bộ theo số ý đúng).
   const [p2BoMode, setP2BoMode] = useState(false);
@@ -68,6 +137,15 @@ export default function NewSessionPage() {
       // Barem tự luận trong file Word (nếu có) tự tách thành từng ý + điểm bên dưới.
       const eb = (data.answerKey?.essayBarem ?? []) as { content: string; points: number }[];
       setEssaySteps(eb.map((s) => ({ content: s.content, points: String(s.points) })));
+      // Có nguyên văn phần tự luận -> nhờ AI tách ý theo ý nghĩa qua MCP;
+      // trong lúc chờ vẫn hiện bản tách máy ở trên, AI xong sẽ thay vào.
+      const rawText = typeof data.essayRawText === "string" ? data.essayRawText.trim() : "";
+      if (rawText) {
+        void requestAiBarem(rawText, eb);
+      } else {
+        stopBaremPoll();
+        setBaremAiStatus("idle");
+      }
       if ((data.answerKey?.questions?.length ?? 0) === 0) {
         setError("File Word không có câu hỏi nào đọc được. Kiểm tra lại bảng đáp án (cột = mã đề, dòng = câu hỏi).");
       }
@@ -83,6 +161,8 @@ export default function NewSessionPage() {
     setAnswerKey(graduationTemplate(codeList));
     // Mẫu đề thi tốt nghiệp: Đúng/Sai chấm theo thang Bộ.
     setP2BoMode(true);
+    stopBaremPoll();
+    setBaremAiStatus("idle");
     setWarnings([{ row: 0, message: "Đã nạp mẫu đề thi tốt nghiệp (12 câu P1, 2 câu P2 × 4 ý, 4 câu P3). Hãy điền đáp án cho từng mã đề rồi duyệt." }]);
   }
 
@@ -310,6 +390,29 @@ export default function NewSessionPage() {
 
             <h3 className="mt-6 text-sm font-bold text-teal-800">Barem tự luận (Phần IV) — không bắt buộc</h3>
             <p className="text-xs text-slate-500">Đã tự tách từ file Word thành từng ý + điểm — sửa trực tiếp tại đây, thêm hoặc xóa ý nếu cần. Điểm nhỏ nhất 0,25.</p>
+            {baremAiStatus === "waiting" && (
+              <p className="mt-1 text-xs font-medium text-amber-700">AI đang tách ý tự luận theo ý nghĩa… bản dưới đây là bản tách tạm, AI xong sẽ tự thay vào (tối đa 3 phút).</p>
+            )}
+            {baremAiStatus === "done" && (
+              <p className="mt-1 text-xs font-medium text-green-700">AI đã tách xong — bác duyệt lại từng ý rồi lưu phiên.</p>
+            )}
+            {baremAiStatus === "fallback" && (
+              <p className="mt-1 text-xs font-medium text-slate-600">
+                AI chưa tách kịp nên đang giữ bản tách tạm.{" "}
+                <button
+                  type="button"
+                  onClick={() =>
+                    void requestAiBarem(
+                      essayRawRef.current,
+                      essaySteps.map((s) => ({ content: s.content, points: parseFloat(s.points.replace(",", ".")) || 0 }))
+                    )
+                  }
+                  className="font-semibold text-teal-700 underline"
+                >
+                  Nhờ AI tách lại
+                </button>
+              </p>
+            )}
             <div className="mt-2 space-y-2">
               {essaySteps.map((s, i) => (
                 <div key={i} className="flex items-start gap-2">

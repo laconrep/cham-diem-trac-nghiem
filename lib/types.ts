@@ -117,6 +117,24 @@ export interface GradeJobRow {
   finished_at: string | null;
 }
 
+/** Job tách ý + dựng barem tự luận bằng AI (migration 004). */
+export type BaremJobStatus = "queued" | "processing" | "done" | "error";
+
+export interface BaremJobRow {
+  id: string;
+  owner_id: string | null;
+  raw_text: string;
+  machine_barem: EssayBaremStep[];
+  status: BaremJobStatus;
+  worker_id: string | null;
+  result_barem: EssayBaremStep[] | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+  claimed_at: string | null;
+  done_at: string | null;
+}
+
 export const SUBMISSION_STATUS_LABEL: Record<SubmissionStatus, string> = {
   queued: "Đang chờ chấm",
   grading: "Đang chấm",

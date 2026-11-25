@@ -29,6 +29,9 @@ export interface ParseResult {
   answerKey: AnswerKey;
   warnings: ParseWarning[];
   tablesFound: number;
+  /** Nguyên văn phần tự luận trong file (từ dòng "TỰ LUẬN" trở đi) — để AI
+   *  tách ý + dựng barem qua cổng MCP. Rỗng nếu file không có mục tự luận. */
+  essayRawText: string;
 }
 
 function stripTags(html: string): string {
@@ -120,6 +123,7 @@ export function parseAnswerTableRows(rows: string[][]): ParseResult {
       answerKey: { codes: [], questions: [], essayBarem: [] },
       warnings: [{ row: 0, message: "Bảng đáp án cần ít nhất 2 dòng (dòng tiêu đề + 1 câu hỏi)." }],
       tablesFound: 0,
+      essayRawText: "",
     };
   }
 
@@ -157,6 +161,7 @@ export function parseAnswerTableRows(rows: string[][]): ParseResult {
         },
       ],
       tablesFound: 1,
+      essayRawText: "",
     };
   }
 
@@ -214,7 +219,7 @@ export function parseAnswerTableRows(rows: string[][]): ParseResult {
     warnings.push({ row: 0, message: "Bảng không có câu hỏi nào đọc được." });
   }
 
-  return { answerKey: { codes, questions, essayBarem: [] }, warnings, tablesFound: 1 };
+  return { answerKey: { codes, questions, essayBarem: [] }, warnings, tablesFound: 1, essayRawText: "" };
 }
 
 /** Đọc file .docx (Buffer) -> AnswerKey + cảnh báo. Đọc tất cả các bảng đáp án rồi gộp lại. */
@@ -232,6 +237,7 @@ export async function parseAnswerDocx(buffer: Buffer): Promise<ParseResult> {
         },
       ],
       tablesFound: 0,
+      essayRawText: extractEssayRawText(html),
     };
   }
   // Đọc TẤT CẢ các bảng trông như bảng đáp án rồi gộp lại (đề có thể tách
@@ -280,6 +286,7 @@ export async function parseAnswerDocx(buffer: Buffer): Promise<ParseResult> {
     answerKey: { codes, questions, essayBarem },
     warnings,
     tablesFound: tables.length,
+    essayRawText: extractEssayRawText(html),
   };
 }
 
@@ -454,6 +461,23 @@ function splitContentChunks(content: string, n: number): string[] {
     }
   }
   return Array(n).fill(content);
+}
+
+/**
+ * Nguyên văn phần tự luận trong file Word (từ dòng tiêu đề "TỰ LUẬN" đến
+ * trước dòng "Ghi chú" nếu có) — gửi cho AI tách ý + dựng barem qua MCP.
+ * Trả về "" nếu file không có mục tự luận.
+ */
+function extractEssayRawText(html: string): string {
+  const lines = htmlToLines(html);
+  const start = lines.findIndex((l) => /tự\s*luận/i.test(l));
+  if (start === -1) return "";
+  const out: string[] = [];
+  for (let i = start; i < lines.length; i++) {
+    if (i > start && /^ghi\s*chú/i.test(lines[i])) break;
+    out.push(lines[i]);
+  }
+  return out.join("\n").trim();
 }
 
 /**
