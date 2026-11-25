@@ -6,9 +6,9 @@
 // đúng #E2EFDA, sai #FCE4D6, đáp án chuẩn #FFF2CC, Times New Roman).
 
 import ExcelJS from "exceljs";
-import type { AnswerKey, GradeResultRow, Submission } from "./types";
+import type { AnswerKey, GradeResultRow, P2Mode, Submission } from "./types";
 import { rankOf } from "./types";
-import { P2_SCALE } from "./scoring";
+import { computeMcqBreakdown } from "./scoring";
 
 const FONT = "Times New Roman";
 const C_HEAD = "1F4E79";
@@ -38,31 +38,10 @@ export interface ExportRow {
   result: GradeResultRow | null;
 }
 
-function pScores(result: GradeResultRow | null): { p1: number; p2: number; p3: number; p4: number } {
+function pScores(result: GradeResultRow | null, p2Mode: P2Mode | undefined): { p1: number; p2: number; p3: number; p4: number } {
   if (!result?.per_question) return { p1: 0, p2: 0, p3: 0, p4: 0 };
-  let p1 = 0;
-  const p2Groups: Record<string, { correct: number; total: number }> = {};
-  let p3 = 0;
-  for (const it of result.per_question.items) {
-    if (it.is_correct === true) {
-      if (it.part === "P1") p1 += it.points;
-      else if (it.part === "P3") p3 += it.points;
-      else if (it.part === "P2") {
-        const base = it.q.replace(/[a-d]$/i, "");
-        p2Groups[base] = p2Groups[base] ?? { correct: 0, total: 0 };
-        p2Groups[base].correct += 1;
-        p2Groups[base].total += 1;
-      }
-    } else if (it.part === "P2") {
-      const base = it.q.replace(/[a-d]$/i, "");
-      p2Groups[base] = p2Groups[base] ?? { correct: 0, total: 0 };
-      p2Groups[base].total += 1;
-    }
-  }
-  let p2 = 0;
-  for (const g of Object.values(p2Groups)) p2 += P2_SCALE[g.correct] ?? 0;
-  const p4 = result.score_essay ?? 0;
-  return { p1: Math.round(p1 * 100) / 100, p2: Math.round(p2 * 100) / 100, p3: Math.round(p3 * 100) / 100, p4 };
+  const mcq = computeMcqBreakdown(result.per_question.items, p2Mode);
+  return { p1: mcq.p1, p2: mcq.p2, p3: mcq.p3, p4: result.score_essay ?? 0 };
 }
 
 export async function buildSessionExcel(
@@ -115,7 +94,7 @@ export async function buildSessionExcel(
     const r = 5 + idx;
     ws.getRow(r).height = 26;
     const res = row.result;
-    const ps = pScores(res);
+    const ps = pScores(res, answerKey?.p2Mode);
     const total = res?.score_total ?? null;
     const examCode = res?.per_question?.exam_code ?? "";
     const errors = res?.per_question?.errors?.join("; ") ?? "";
@@ -165,10 +144,10 @@ export async function buildSessionExcel(
     return Math.round((graded.reduce((s, r) => s + f(r), 0) / graded.length) * 100) / 100;
   };
   const avgs = [
-    avg((r) => pScores(r.result).p1),
-    avg((r) => pScores(r.result).p2),
-    avg((r) => pScores(r.result).p3),
-    avg((r) => pScores(r.result).p4),
+    avg((r) => pScores(r.result, answerKey?.p2Mode).p1),
+    avg((r) => pScores(r.result, answerKey?.p2Mode).p2),
+    avg((r) => pScores(r.result, answerKey?.p2Mode).p3),
+    avg((r) => pScores(r.result, answerKey?.p2Mode).p4),
     avg((r) => r.result?.score_total ?? 0),
   ];
   [5, 6, 7, 8, 9].forEach((col, i) => {

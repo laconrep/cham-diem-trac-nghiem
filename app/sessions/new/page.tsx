@@ -26,6 +26,9 @@ export default function NewSessionPage() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [essayText, setEssayText] = useState("");
+  // Cách tính điểm Đúng/Sai: false = mặc định mỗi ý đúng 0,25đ;
+  // true = "chấm theo mẫu bộ" (thang Bộ theo số ý đúng).
+  const [p2BoMode, setP2BoMode] = useState(false);
   // Ô barem tự giãn cao theo nội dung để hiện đủ tất cả các bước (không cuộn).
   const essayRef = useRef<HTMLTextAreaElement | null>(null);
   useEffect(() => {
@@ -51,6 +54,8 @@ export default function NewSessionPage() {
       }
       setAnswerKey(data.answerKey as AnswerKey);
       setWarnings((data.warnings ?? []) as Warning[]);
+      // File tải lên: mặc định Đúng/Sai 0,25đ/ý (GV tick "mẫu bộ" nếu muốn thang Bộ).
+      setP2BoMode(false);
       // Barem tự luận trong file Word (nếu có) tự điền vào ô bên dưới — khỏi nhập tay.
       const eb = (data.answerKey?.essayBarem ?? []) as { content: string; points: number }[];
       if (eb.length > 0) {
@@ -71,6 +76,8 @@ export default function NewSessionPage() {
   function loadTemplate() {
     const codeList = codes.length > 0 ? codes : ["101"];
     setAnswerKey(graduationTemplate(codeList));
+    // Mẫu đề thi tốt nghiệp: Đúng/Sai chấm theo thang Bộ.
+    setP2BoMode(true);
     setWarnings([{ row: 0, message: "Đã nạp mẫu đề thi tốt nghiệp (12 câu P1, 2 câu P2 × 4 ý, 4 câu P3). Hãy điền đáp án cho từng mã đề rồi duyệt." }]);
   }
 
@@ -132,7 +139,10 @@ export default function NewSessionPage() {
       const res = await fetch("/api/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: title.trim(), answerKey: { ...answerKey, essayBarem } }),
+        body: JSON.stringify({
+          title: title.trim(),
+          answerKey: { ...answerKey, essayBarem, p2Mode: p2BoMode ? "bo" : "perItem" },
+        }),
       });
       const data = await res.json();
       if (!data.ok) {
@@ -218,9 +228,23 @@ export default function NewSessionPage() {
             <h2 className="text-base font-bold">Tiêu chí chấm — kiểm tra và sửa trước khi lưu</h2>
             <p className="mt-1 text-sm text-slate-600">
               Mã đề: {codes.join(", ") || "—"} · {answerKey.questions.length} câu. Sửa trực tiếp
-              đáp án / điểm / phần trong bảng. Điểm P2 tính theo thang Bộ (0–0,1–0,25–0,5–1,0 theo
-              số ý đúng).
+              đáp án / điểm / phần trong bảng.
             </p>
+            {answerKey.questions.some((q) => q.part === "P2") && (
+              <label className="mt-3 flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={p2BoMode}
+                  onChange={(e) => setP2BoMode(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0"
+                />
+                <span>
+                  <b>Chấm theo mẫu bộ</b> — Phần II Đúng/Sai tính theo thang Bộ theo số ý đúng
+                  (1 ý: 0,1 · 2 ý: 0,25 · 3 ý: 0,5 · 4 ý: 1,0). Không tick: mỗi ý đúng được
+                  0,25 điểm.
+                </span>
+              </label>
+            )}
             {grouped.map((g) => (
               <div key={g.part} className="mt-4">
                 <h3 className="text-sm font-bold text-teal-800">{PART_LABEL[g.part]}</h3>

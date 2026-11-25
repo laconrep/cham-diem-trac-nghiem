@@ -7,6 +7,11 @@
 //   | 13a | Đ   | S   |   <- ý Đúng/Sai (nhãn câu có chữ cái)
 //   | 15  | 12  | 7   |   <- trả lời ngắn (đáp án là số/chữ)
 //
+// Nhận dạng linh hoạt (sửa 25/11/2026): mã đề chấp nhận cả "Mã đề 132",
+// "Đề: 209", "132"; nhãn câu chấp nhận "Câu 1", "1.", "(1)", "13a";
+// bảng Đúng/Sai có 2 cột nhãn ("Câu" | "Ý") được gộp nhãn thành "1a";
+// nhiều bảng đáp án trong 1 file được đọc hết rồi gộp lại.
+//
 // mammoth chuyển .docx thành HTML (bảng Word -> <table>); ở đây tách các
 // <table> ra rồi đọc từng ô. Trả về AnswerKey + cảnh báo để GV kiểm tra
 // trước khi duyệt tiêu chí chấm.
@@ -62,14 +67,42 @@ function extractTables(html: string): string[][][] {
   return tables;
 }
 
-function isQuestionLabel(cell: string): boolean {
-  // "1", "13a", "13A", "15" ... (số, có thể kèm 1 chữ cái cho ý Đúng/Sai)
-  return /^\d{1,3}[a-dA-D]?$/.test(cell.trim());
+/** Chuẩn hoá ô mã đề: "Mã đề 132" / "Mã đề: 132" / "Đề 209" / "132" -> "132". */
+function normalizeCodeCell(cell: string): string {
+  return cell
+    .trim()
+    .replace(/^(mã\s*đề|mã|đề)\s*:?\s*/i, "")
+    .trim();
 }
 
 function isCodeCell(cell: string): boolean {
-  // Mã đề thường là số 2-4 chữ số ("101", "485") hoặc chữ+số ("A1")
-  return /^[A-Za-z0-9]{2,6}$/.test(cell.trim()) && !/^câu$/i.test(cell.trim());
+  // Mã đề thường là số 2-4 chữ số ("101", "485") hoặc chữ+số ("A1");
+  // chấp nhận cả dạng có tiền tố "Mã đề" (đã chuẩn hoá ở normalizeCodeCell)
+  // và dạng có gạch nối/gạch dưới bên trong.
+  const code = normalizeCodeCell(cell);
+  return /^[A-Za-z0-9][A-Za-z0-9_-]{1,5}$/.test(code) && !/^câu$/i.test(code);
+}
+
+/** Chuẩn hoá nhãn câu: "Câu 1", "Câu 13a", "1.", "(1)", "1)" -> "1", "13a". */
+function normalizeLabel(cell: string): string {
+  let s = cell.trim();
+  s = s.replace(/^câu\s*/i, "");
+  s = s.replace(/^\(\s*/, "").replace(/\s*\)$/, "");
+  s = s.replace(/[.)\s:-]+$/, "");
+  return s.trim();
+}
+
+/** Chuẩn hoá ô Ý (bảng Đúng/Sai 2 cột nhãn): "a)", "a.", "(a)" -> "a". */
+function normalizeSub(cell: string): string {
+  let s = cell.trim().toLowerCase();
+  s = s.replace(/^\(\s*/, "").replace(/\s*\)$/, "");
+  s = s.replace(/[.)\s]+$/, "");
+  return s;
+}
+
+function isQuestionLabel(cell: string): boolean {
+  // "1", "13a", "13A", "15" ... (số, có thể kèm 1 chữ cái cho ý Đúng/Sai)
+  return /^\d{1,3}[a-dA-D]?$/.test(normalizeLabel(cell));
 }
 
 function partOf(label: string, answer: string): QuestionPart {
@@ -91,16 +124,24 @@ export function parseAnswerTableRows(rows: string[][]): ParseResult {
   }
 
   // Tìm dòng tiêu đề: dòng đầu tiên có ô đầu là "Câu" (hoặc trống) và các ô sau là mã đề.
+  // Bảng Đúng/Sai có thể có 2 cột nhãn ("Câu" | "Ý") — khi đó mã đề bắt đầu từ cột thứ 3.
   let headerIdx = -1;
   let codes: string[] = [];
+  let labelCols = 1;
   for (let i = 0; i < Math.min(rows.length, 5); i++) {
     const row = rows[i];
-    const first = (row[0] ?? "").trim();
-    if (/^câu$/i.test(first) || first === "") {
-      const rest = row.slice(1).map((c) => c.trim()).filter(Boolean);
+    const first = (row[0] ?? "").trim().toLowerCase();
+    if (first === "câu" || first === "câu hỏi" || first === "") {
+      const second = (row[1] ?? "").trim().toLowerCase();
+      const twoLabelCols = second === "ý" || second === "y";
+      const rest = row
+        .slice(twoLabelCols ? 2 : 1)
+        .map((c) => normalizeCodeCell(c))
+        .filter(Boolean);
       if (rest.length >= 1 && rest.every(isCodeCell)) {
         headerIdx = i;
         codes = rest;
+        labelCols = twoLabelCols ? 2 : 1;
         break;
       }
     }
@@ -128,17 +169,26 @@ export function parseAnswerTableRows(rows: string[][]): ParseResult {
   const questions: AnswerQuestion[] = [];
   for (let i = headerIdx + 1; i < rows.length; i++) {
     const row = rows[i];
-    const label = (row[0] ?? "").trim();
-    if (!label) continue;
-    if (/^phần/i.test(label)) continue; // dòng phân mục "Phần I", "Phần II"...
+    const rawLabel = (row[0] ?? "").trim();
+    if (!rawLabel) continue;
+    if (/^phần/i.test(rawLabel)) continue; // dòng phân mục "Phần I", "Phần II"...
+    let label = normalizeLabel(rawLabel);
+    if (labelCols === 2) {
+      const sub = normalizeSub(row[1] ?? "");
+      if (!sub) {
+        warnings.push({ row: i + 1, message: `Dòng ${i + 1}: thiếu ký hiệu ý (a, b, c, d) ở cột Ý. Dòng này bị bỏ qua.` });
+        continue;
+      }
+      label = label + sub;
+    }
     if (!isQuestionLabel(label)) {
-      warnings.push({ row: i + 1, message: `Dòng ${i + 1}: nhãn câu “${label}” không nhận dạng được (mong đợi dạng 1, 2, 13a...). Dòng này bị bỏ qua.` });
+      warnings.push({ row: i + 1, message: `Dòng ${i + 1}: nhãn câu “${rawLabel}” không nhận dạng được (mong đợi dạng 1, 2, 13a...). Dòng này bị bỏ qua.` });
       continue;
     }
     const answers: Record<string, string> = {};
     let firstAnswer = "";
     codes.forEach((code, ci) => {
-      const val = (row[ci + 1] ?? "").trim();
+      const val = (row[labelCols + ci] ?? "").trim();
       if (val) {
         answers[code] = val;
         if (!firstAnswer) firstAnswer = val;
@@ -167,7 +217,7 @@ export function parseAnswerTableRows(rows: string[][]): ParseResult {
   return { answerKey: { codes, questions, essayBarem: [] }, warnings, tablesFound: 1 };
 }
 
-/** Đọc file .docx (Buffer) -> AnswerKey + cảnh báo. Lấy bảng đầu tiên đọc được. */
+/** Đọc file .docx (Buffer) -> AnswerKey + cảnh báo. Đọc tất cả các bảng đáp án rồi gộp lại. */
 export async function parseAnswerDocx(buffer: Buffer): Promise<ParseResult> {
   const { value: html } = await mammoth.convertToHtml({ buffer });
   const tables = extractTables(html);
@@ -184,30 +234,53 @@ export async function parseAnswerDocx(buffer: Buffer): Promise<ParseResult> {
       tablesFound: 0,
     };
   }
-  // Chọn bảng có nhiều dòng câu hỏi nhất (tránh nhầm bảng tiêu đề nhỏ).
-  let best = tables[0];
-  let bestScore = -1;
+  // Đọc TẤT CẢ các bảng trông như bảng đáp án rồi gộp lại (đề có thể tách
+  // trắc nghiệm và Đúng/Sai thành 2 bảng riêng). Bảng nào không đọc được
+  // (vd bảng barem Nội dung/Điểm) thì bỏ qua.
+  const warnings: ParseWarning[] = [];
+  const codes: string[] = [];
+  const questions: AnswerQuestion[] = [];
+  const seen = new Set<string>();
   for (const t of tables) {
-    const score = t.filter((r) => isQuestionLabel((r[0] ?? "").trim())).length;
-    if (score > bestScore) {
-      bestScore = score;
-      best = t;
+    const res = parseAnswerTableRows(t);
+    if (res.answerKey.questions.length === 0) continue;
+    for (const c of res.answerKey.codes) {
+      if (!codes.includes(c)) codes.push(c);
     }
+    for (const q of res.answerKey.questions) {
+      const key = `${q.part}:${q.q}`;
+      if (seen.has(key)) {
+        warnings.push({
+          row: 0,
+          message: `Câu ${q.q} xuất hiện ở nhiều bảng — chỉ giữ đáp án ở bảng đầu tiên.`,
+        });
+        continue;
+      }
+      seen.add(key);
+      questions.push(q);
+    }
+    warnings.push(...res.warnings);
   }
-  const res = parseAnswerTableRows(best);
-  res.tablesFound = tables.length;
+  if (questions.length === 0) {
+    // Không bảng nào đọc được: trả cảnh báo của bảng đầu tiên (giữ hành vi cũ).
+    const first = parseAnswerTableRows(tables[0]);
+    warnings.push(...first.warnings);
+  }
   // Barem tự luận: đọc thêm từ file Word (mục "BAREM TỰ LUẬN" hoặc bảng Nội dung/Điểm)
   // để màn hình tạo phiên tự điền — trước đây luôn trả [] nên GV phải nhập tay.
   const essayBarem = extractEssayBaremFromHtml(html);
-  res.answerKey.essayBarem = essayBarem;
   if (essayBarem.length === 0 && /tự luận/i.test(html)) {
-    res.warnings.push({
+    warnings.push({
       row: 0,
       message:
         "Chưa thấy barem tự luận trong file Word — nếu đề có tự luận, nhập tay vào ô “Barem tự luận” bên dưới (mỗi dòng “Nội dung | điểm”).",
     });
   }
-  return res;
+  return {
+    answerKey: { codes, questions, essayBarem },
+    warnings,
+    tablesFound: tables.length,
+  };
 }
 
 /** Mẫu đề thi tốt nghiệp: P1 12 câu ABCD, P2 2 câu × 4 ý, P3 4 câu trả lời ngắn.
@@ -229,7 +302,8 @@ export function graduationTemplate(codes: string[]): AnswerKey {
     { id: "b1", content: "Bước 1", points: 0.25 },
     { id: "b2", content: "Bước 2", points: 0.25 },
   ];
-  return { codes, questions, essayBarem };
+  // Mẫu đề thi tốt nghiệp chấm Đúng/Sai theo thang Bộ.
+  return { codes, questions, essayBarem, p2Mode: "bo" };
 }
 
 /** Chuyển văn bản barem tự luận (mỗi dòng "Nội dung | điểm") thành danh sách bước. */

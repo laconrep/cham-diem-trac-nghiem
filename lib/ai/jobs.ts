@@ -1,8 +1,8 @@
 // Hàm nghiệp vụ cho cổng MCP — mọi thao tác DB đi qua đây, route chỉ làm
 // JSON-RPC plumbing (theo mẫu lib/ai/jobs.ts của EduSync).
 import { getSupabase } from "../supabase";
-import { normalizeEssaySteps, round2 } from "../scoring";
-import type { GradeJobRow, PerQuestionResult, SessionRow } from "../types";
+import { computeMcqBreakdown, normalizeEssaySteps, round2 } from "../scoring";
+import type { AnswerKey, GradeJobRow, P2Mode, PerQuestionResult, SessionRow } from "../types";
 
 export interface JobSummary {
   id: string;
@@ -124,18 +124,45 @@ export async function submitJobResult(
   input: SubmitResultInput
 ): Promise<{ ok: boolean; error?: string; jobDone?: boolean }> {
   const db = getSupabase();
+  // Điểm trắc nghiệm: app tự tính lại từ kết quả từng câu theo chế độ của
+  // phiên (P2 mặc định 0,25đ/ý; phiên bật "chấm theo mẫu bộ" thì theo thang
+  // Bộ) — tránh agent chấm áp sai thang điểm Đúng/Sai. Chỉ tính lại khi
+  // agent gửi đủ kết quả từng câu; thiếu thì giữ điểm agent gửi.
+  let perQuestion = input.perQuestion;
+  let scoreEssay = input.scoreEssay;
+  let scoreMcq = input.scoreMcq;
+  let mcqRecomputed = false;
+  if (perQuestion?.items?.length) {
+    const { data: jobRow } = await db
+      .from("cdtn_grade_jobs")
+      .select("session_id")
+      .eq("id", jobId)
+      .single();
+    const sessionId = jobRow?.session_id as string | undefined;
+    let p2Mode: P2Mode | undefined;
+    if (sessionId) {
+      const { data: sess } = await db
+        .from("cdtn_sessions")
+        .select("answer_key")
+        .eq("id", sessionId)
+        .single();
+      p2Mode = (sess?.answer_key as AnswerKey | null)?.p2Mode;
+    }
+    scoreMcq = computeMcqBreakdown(perQuestion.items, p2Mode).total;
+    mcqRecomputed = true;
+  }
   // Thang điểm tự luận nhỏ nhất là 0,25đ (bác chốt 20/11): chuẩn hoá điểm
   // từng bước về bội số 0,25 gần nhất, rồi tính lại điểm tự luận + tổng
   // điểm từ các bước đã chuẩn hoá (tránh agent gửi 0,125đ như bài Cẩm Diên
-  // bước b6 phiên "10"). Điểm trắc nghiệm giữ nguyên như agent gửi.
-  let perQuestion = input.perQuestion;
-  let scoreEssay = input.scoreEssay;
+  // bước b6 phiên "10").
   let scoreTotal = input.scoreTotal;
   if (perQuestion?.essay_steps?.length) {
     const norm = normalizeEssaySteps(perQuestion.essay_steps);
     perQuestion = { ...perQuestion, essay_steps: norm.steps };
     scoreEssay = norm.total;
-    scoreTotal = round2(input.scoreMcq + norm.total);
+    scoreTotal = round2(scoreMcq + norm.total);
+  } else if (mcqRecomputed) {
+    scoreTotal = round2(scoreMcq + scoreEssay);
   }
   // 1. Ghi / cập nhật kết quả của bài (1 bài = 1 dòng result).
   const { data: existing } = await db
@@ -147,7 +174,7 @@ export async function submitJobResult(
   const payload = {
     job_id: jobId,
     submission_id: input.submissionId,
-    score_mcq: input.scoreMcq,
+    score_mcq: scoreMcq,
     score_essay: scoreEssay,
     score_total: scoreTotal,
     per_question: perQuestion,

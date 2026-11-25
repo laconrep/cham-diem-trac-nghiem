@@ -2,13 +2,18 @@
 
 export type QuestionPart = "P1" | "P2" | "P3" | "P4";
 
+/** Cách tính điểm Phần II (Đúng/Sai):
+ *  - "perItem" (mặc định): mỗi ý đúng được điểm của ý đó (thường 0,25đ/ý).
+ *  - "bo": thang Bộ theo số ý đúng trong 1 câu (0–0,1–0,25–0,5–1,0). */
+export type P2Mode = "perItem" | "bo";
+
 export interface AnswerQuestion {
   /** Nhãn câu: "1", "13a", "15"... */
   q: string;
   part: QuestionPart;
   /** Đáp án đúng theo mã đề: { "101": "A", "102": "B" } */
   answers: Record<string, string>;
-  /** Điểm khi làm đúng hoàn toàn câu này (P1 0,25 · P3 0,5 · P2 tính theo thang Bộ). */
+  /** Điểm khi làm đúng hoàn toàn câu này (P1 0,25 · P3 0,5 · P2 theo p2Mode của phiên). */
   points: number;
 }
 
@@ -22,6 +27,8 @@ export interface AnswerKey {
   codes: string[];
   questions: AnswerQuestion[];
   essayBarem: EssayBaremStep[];
+  /** Cách tính điểm Đúng/Sai của phiên; vắng mặt = "perItem" (mặc định 0,25đ/ý). */
+  p2Mode?: P2Mode;
 }
 
 export interface CriteriaRow extends AnswerQuestion {}
