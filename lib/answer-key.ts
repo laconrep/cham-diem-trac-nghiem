@@ -340,8 +340,10 @@ function htmlToLines(html: string): string[] {
 
 /**
  * Đọc barem tự luận trong file Word (để màn hình tạo phiên tự điền, khỏi nhập tay).
- * Hỗ trợ 2 dạng: (1) bảng có cột "Nội dung/Bước" + "Điểm";
- * (2) đoạn văn sau dòng "BAREM TỰ LUẬN", mỗi dòng "Nội dung | điểm".
+ * Hỗ trợ 3 dạng: (1) bảng có cột "Nội dung/Bước" + "Điểm";
+ * (2) đoạn văn sau dòng "BAREM TỰ LUẬN", mỗi dòng "Nội dung | điểm";
+ * (3) đáp án tự luận viết thành đoạn văn trong mục "TỰ LUẬN"
+ *     (Câu N (X điểm): a) (Y điểm) ... b) (Y điểm) ...).
  * Trả về [] khi file không có mục barem (đề chỉ có trắc nghiệm).
  */
 function extractEssayBaremFromHtml(html: string): EssayBaremStep[] {
@@ -365,14 +367,80 @@ function extractEssayBaremFromHtml(html: string): EssayBaremStep[] {
   }
   const lines = htmlToLines(html);
   const idx = lines.findIndex((l) => /barem\s+tự\s+luận/i.test(l));
-  if (idx === -1) return [];
-  const baremLines: string[] = [];
-  for (let i = idx + 1; i < lines.length && baremLines.length < 30; i++) {
-    const line = lines[i];
-    // Dừng ở tiêu đề mục mới (vd "2 CÂU CẦN ĐỐI CHIẾU...").
-    if (/^\d+\s+câu cần/i.test(line)) break;
-    const m = line.match(/^(.*)\|\s*([\d]+(?:[.,]\d+)?)\s*$/);
-    if (m) baremLines.push(`${m[1].trim()} | ${m[2]}`);
+  if (idx !== -1) {
+    const baremLines: string[] = [];
+    for (let i = idx + 1; i < lines.length && baremLines.length < 30; i++) {
+      const line = lines[i];
+      // Dừng ở tiêu đề mục mới (vd "2 CÂU CẦN ĐỐI CHIẾU...").
+      if (/^\d+\s+câu cần/i.test(line)) break;
+      const m = line.match(/^(.*)\|\s*([\d]+(?:[.,]\d+)?)\s*$/);
+      if (m) baremLines.push(`${m[1].trim()} | ${m[2]}`);
+    }
+    const fromSection = parseEssayBaremText(baremLines.join("\n"));
+    if (fromSection.length > 0) return fromSection;
   }
-  return parseEssayBaremText(baremLines.join("\n"));
+  // Dạng 3: đáp án tự luận viết thành đoạn văn trong mục "TỰ LUẬN"
+  // (Câu N (X điểm): a) (Y điểm) ... b) (Y điểm) ...).
+  return extractEssayBaremFromProse(lines);
+}
+
+/**
+ * Đọc barem tự luận viết dạng đoạn văn (định dạng GV hay dùng trong file
+ * đáp án chính thức):
+ *   PHẦN III. TỰ LUẬN (3,0 điểm)
+ *   Câu 1 (2,0 điểm):
+ *   a) (1,0 điểm) <đề bài>. Hướng dẫn chấm: ...
+ *   b) (1,0 điểm) <đề bài>. Hướng dẫn chấm: ...
+ * Mỗi ý a/b thành 1 bước barem (nội dung = "Câu 1a: ..." + toàn văn ý đó).
+ * Câu không chia ý (chỉ "Câu N (X điểm) <nội dung>") thành 1 bước X điểm.
+ */
+function extractEssayBaremFromProse(lines: string[]): EssayBaremStep[] {
+  const start = lines.findIndex((l) => /tự\s*luận/i.test(l));
+  if (start === -1) return [];
+  const parsePts = (s: string) => parseFloat(s.replace(",", "."));
+  const qRe = /^câu\s*(\d{1,3})\s*[.:]?\s*\(\s*([\d.,]+)\s*điểm\s*\)\s*:?\s*(.*)$/i;
+  const subRe = /^([a-d])[.)]\s*\(\s*([\d.,]+)\s*điểm\s*\)\s*(.*)$/i;
+  const steps: EssayBaremStep[] = [];
+  let currentQ = "";
+  let pendingQ: { q: string; points: number; text: string } | null = null;
+  const flushPending = () => {
+    if (pendingQ && pendingQ.text.trim()) {
+      steps.push({
+        id: `b${steps.length + 1}`,
+        content: `Câu ${pendingQ.q}: ${pendingQ.text.trim()}`.replace(/\|/g, "/"),
+        points: pendingQ.points,
+      });
+    }
+    pendingQ = null;
+  };
+  for (let i = start + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^ghi\s*chú/i.test(line)) break;
+    const qm = line.match(qRe);
+    if (qm) {
+      flushPending();
+      currentQ = qm[1];
+      const rest = (qm[3] ?? "").trim();
+      if (rest) pendingQ = { q: currentQ, points: parsePts(qm[2]), text: rest };
+      continue;
+    }
+    const sm = line.match(subRe);
+    if (sm && currentQ) {
+      // Đã có ý a/b -> bỏ bước chờ của câu cha (điểm câu cha = tổng các ý).
+      pendingQ = null;
+      const pts = parsePts(sm[2]);
+      if (!Number.isNaN(pts) && pts > 0) {
+        steps.push({
+          id: `b${steps.length + 1}`,
+          content: `Câu ${currentQ}${sm[1].toLowerCase()}: ${(sm[3] ?? "").trim()}`.replace(/\|/g, "/"),
+          points: pts,
+        });
+      }
+      continue;
+    }
+    // Dòng nối tiếp của câu không chia ý: ghép vào nội dung đang chờ.
+    if (pendingQ) pendingQ.text += ` ${line}`;
+  }
+  flushPending();
+  return steps;
 }
