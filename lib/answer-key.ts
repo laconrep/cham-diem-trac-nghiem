@@ -344,6 +344,7 @@ function htmlToLines(html: string): string[] {
  * (2) đoạn văn sau dòng "BAREM TỰ LUẬN", mỗi dòng "Nội dung | điểm";
  * (3) đáp án tự luận viết thành đoạn văn trong mục "TỰ LUẬN"
  *     (Câu N (X điểm): a) (Y điểm) ... b) (Y điểm) ...).
+ * Mọi bước lớn hơn 0,25 đều được tách thành nhiều bước 0,25 (tổng không đổi).
  * Trả về [] khi file không có mục barem (đề chỉ có trắc nghiệm).
  */
 function extractEssayBaremFromHtml(html: string): EssayBaremStep[] {
@@ -362,7 +363,7 @@ function extractEssayBaremFromHtml(html: string): EssayBaremStep[] {
           steps.push({ id: `b${steps.length + 1}`, content, points: pts });
         }
       }
-      if (steps.length > 0) return steps;
+      if (steps.length > 0) return splitStepsToQuarter(steps);
     }
   }
   const lines = htmlToLines(html);
@@ -377,11 +378,33 @@ function extractEssayBaremFromHtml(html: string): EssayBaremStep[] {
       if (m) baremLines.push(`${m[1].trim()} | ${m[2]}`);
     }
     const fromSection = parseEssayBaremText(baremLines.join("\n"));
-    if (fromSection.length > 0) return fromSection;
+    if (fromSection.length > 0) return splitStepsToQuarter(fromSection);
   }
   // Dạng 3: đáp án tự luận viết thành đoạn văn trong mục "TỰ LUẬN"
   // (Câu N (X điểm): a) (Y điểm) ... b) (Y điểm) ...).
-  return extractEssayBaremFromProse(lines);
+  return splitStepsToQuarter(extractEssayBaremFromProse(lines));
+}
+
+/**
+ * Tách mọi bước barem lớn hơn 0,25 thành nhiều bước 0,25 (nội dung giữ nguyên
+ * cho từng bước con; phần lẻ nếu có giữ thành 1 bước cuối để tổng điểm không đổi).
+ * Vd bước 0,5 -> 2 bước 0,25; bước 1,0 -> 4 bước 0,25.
+ */
+function splitStepsToQuarter(steps: EssayBaremStep[]): EssayBaremStep[] {
+  const out: EssayBaremStep[] = [];
+  for (const s of steps) {
+    if (!(s.points > 0.25)) {
+      out.push(s);
+      continue;
+    }
+    let remaining = Math.round(s.points * 100) / 100;
+    while (remaining > 0.25) {
+      out.push({ id: "", content: s.content, points: 0.25 });
+      remaining = Math.round((remaining - 0.25) * 100) / 100;
+    }
+    if (remaining > 0) out.push({ id: "", content: s.content, points: remaining });
+  }
+  return out.map((s, i) => ({ ...s, id: `b${i + 1}` }));
 }
 
 /**
