@@ -134,14 +134,17 @@ export const GRADE_MODE_LABEL: Record<GradeMode, string> = {
 /** Tiền tố stage dùng để mã hoá chế độ chấm lại khi chưa có cột mode (migration 005). */
 export const REGRADE_STAGE_PREFIX = "regrade:";
 
-/** Đọc chế độ chấm của job: ưu tiên cột mode (migration 005), sau đó tiền tố stage. */
+/** Đọc chế độ chấm của job: tiền tố stage (ghi lúc tạo job) thắng cột mode.
+ *  Lý do: migration thêm cột mode với default 'full' sẽ backfill 'full' cho
+ *  job chấm lại đang chạy dở — nếu đọc cột trước, job đó bị hiểu nhầm là
+ *  chấm cả bài và ghi đè mất phần không chấm lại (sự cố 28/11). */
 export function jobModeOf(job: { mode?: string | null; stage?: string | null }): GradeMode {
-  if (job.mode === "essay" || job.mode === "mcq" || job.mode === "full") return job.mode;
   const stage = job.stage ?? "";
   if (stage.startsWith(REGRADE_STAGE_PREFIX)) {
     const m = stage.slice(REGRADE_STAGE_PREFIX.length).split("|")[0];
     if (m === "essay" || m === "mcq") return m;
   }
+  if (job.mode === "essay" || job.mode === "mcq" || job.mode === "full") return job.mode;
   return "full";
 }
 
