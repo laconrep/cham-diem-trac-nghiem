@@ -30,11 +30,13 @@ export interface JobSummary {
 export async function listPendingJobs(workerId: string, limit = 20): Promise<JobSummary[]> {
   const db = getSupabase();
   // Cột mode chỉ có sau migration 005: thử select kèm mode, lỗi thì select lại
-  // không có mode (chế độ khi đó đọc từ tiền tố stage).
+  // không có mode (chế độ khi đó đọc từ tiền tố stage). Tên phiên lấy bằng
+  // truy vấn riêng (embed "sessions(title)" không khớp schema cache của
+  // PostgREST với bảng tiền tố cdtn_).
   let rows: Array<Record<string, unknown>> | null = null;
   const withMode = await db
     .from("cdtn_grade_jobs")
-    .select("id, session_id, status, total, completed, created_at, stage, mode, sessions(title)")
+    .select("id, session_id, status, total, completed, created_at, stage, mode")
     .eq("status", "queued")
     .order("created_at", { ascending: true })
     .limit(limit);
@@ -43,18 +45,24 @@ export async function listPendingJobs(workerId: string, limit = 20): Promise<Job
   } else {
     const plain = await db
       .from("cdtn_grade_jobs")
-      .select("id, session_id, status, total, completed, created_at, stage, sessions(title)")
+      .select("id, session_id, status, total, completed, created_at, stage")
       .eq("status", "queued")
       .order("created_at", { ascending: true })
       .limit(limit);
     if (plain.error) throw new Error(plain.error.message);
     rows = (plain.data ?? []) as Array<Record<string, unknown>>;
   }
+  const sessionIds = [...new Set(rows.map((j) => j.session_id as string))];
+  const titleById = new Map<string, string>();
+  if (sessionIds.length > 0) {
+    const { data: sessRows } = await db.from("cdtn_sessions").select("id, title").in("id", sessionIds);
+    for (const s of sessRows ?? []) titleById.set(s.id as string, (s.title as string) ?? "");
+  }
   void workerId;
   return rows.map((j) => ({
     id: j.id as string,
     session_id: j.session_id as string,
-    session_title: ((j.sessions as unknown as { title?: string } | null)?.title ?? "") as string,
+    session_title: titleById.get(j.session_id as string) ?? "",
     status: j.status as string,
     total: j.total as number,
     completed: j.completed as number,
