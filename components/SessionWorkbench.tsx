@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { GradeResultRow, Submission, SubmissionStatus } from "@/lib/types";
 import { SUBMISSION_STATUS_CLASS, SUBMISSION_STATUS_LABEL, stageLabel } from "@/lib/types";
+import BaremCopyPicker from "@/components/BaremCopyPicker";
 
 interface ResultItem {
   submission: Submission;
@@ -492,6 +493,10 @@ export default function SessionWorkbench({
               Sửa nội dung/điểm từng ý, thêm hoặc xóa ý. Điểm nhỏ nhất 0,25. Lưu xong điểm cũ vẫn giữ nguyên —
               bấm “Chấm lại tự luận” ở khung dưới để chấm lại theo barem mới.
             </p>
+            <BaremCopyPicker
+              excludeSessionId={sessionId}
+              onCopy={(steps) => setDraftSteps(steps)}
+            />
             <div className="mt-2 space-y-2">
               {draftSteps.map((s, i) => (
                 <div key={i} className="flex items-start gap-2">

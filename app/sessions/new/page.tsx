@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { AnswerKey, QuestionPart } from "@/lib/types";
 import { graduationTemplate } from "@/lib/answer-key";
+import BaremCopyPicker from "@/components/BaremCopyPicker";
 
 interface Warning {
   row: number;
@@ -390,6 +391,7 @@ export default function NewSessionPage() {
 
             <h3 className="mt-6 text-sm font-bold text-teal-800">Barem tự luận (Phần IV) — không bắt buộc</h3>
             <p className="text-xs text-slate-500">Đã tự tách từ file Word thành từng ý + điểm — sửa trực tiếp tại đây, thêm hoặc xóa ý nếu cần. Điểm nhỏ nhất 0,25.</p>
+            <BaremCopyPicker onCopy={(steps) => setEssaySteps(steps)} />
             {baremAiStatus === "waiting" && (
               <p className="mt-1 text-xs font-medium text-amber-700">AI đang tách ý tự luận theo ý nghĩa… bản dưới đây là bản tách tạm, AI xong sẽ tự thay vào (tối đa 3 phút).</p>
             )}
