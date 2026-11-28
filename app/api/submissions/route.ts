@@ -5,6 +5,7 @@
 // không có job đang chạy thì tạo job mới (queued) cho các bài chưa chấm.
 import { getSupabase, getPublicUrl, PHOTO_BUCKET } from "@/lib/supabase";
 import { requireApiUser, checkSessionAccess, forbiddenResponse } from "@/lib/auth";
+import { jobModeOf } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,15 +14,17 @@ const IMAGE_MIME = ["image/jpeg", "image/png", "image/webp", "image/heic", "imag
 
 async function ensureJobForSession(db: ReturnType<typeof getSupabase>, sessionId: string, submissionIds: string[]) {
   // Job đang chạy (queued/processing) thì gắn bài mới vào; không có thì tạo job mới.
+  // Ngoại lệ: job đang chạy là job chấm lại từng phần (essay/mcq) thì bài mới
+  // KHÔNG gắn vào đó (sẽ bị chấm thiếu phần) mà tạo job chấm đủ riêng.
   const { data: active } = await db
     .from("cdtn_grade_jobs")
-    .select("id, total")
+    .select("*")
     .eq("session_id", sessionId)
     .in("status", ["queued", "processing"])
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (active) {
+  if (active && jobModeOf(active as { mode?: string | null; stage?: string | null }) === "full") {
     await db.from("cdtn_submissions").update({ job_id: active.id }).in("id", submissionIds);
     await db
       .from("cdtn_grade_jobs")

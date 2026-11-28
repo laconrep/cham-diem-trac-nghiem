@@ -4,6 +4,7 @@
 // chờ qua /api/submissions nên GV không phải bấm lại từng lần.
 import { getSupabase } from "@/lib/supabase";
 import { requireApiUser, checkSessionAccess, forbiddenResponse } from "@/lib/auth";
+import { jobModeOf } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,12 +38,21 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
     const { data: active } = await db
       .from("cdtn_grade_jobs")
-      .select("id, total, completed")
+      .select("*")
       .eq("session_id", sessionId)
       .in("status", ["queued", "processing"])
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
+    // Job đang chạy là job chấm lại từng phần thì KHÔNG gắn bài chưa chấm vào
+    // (bài mới sẽ bị chấm thiếu phần) — chờ job đó xong rồi chấm tiếp.
+    if (active && jobModeOf(active as { mode?: string | null; stage?: string | null }) !== "full") {
+      return Response.json({
+        ok: true,
+        jobId: active.id as string,
+        message: "Đang có job chấm lại chạy. Chờ xong rồi bấm chấm tiếp các bài chưa chấm.",
+      });
+    }
     if (active) {
       // Chỉ gắn các bài chưa thuộc job đang chạy (tránh đếm trùng).
       const { data: already } = await db

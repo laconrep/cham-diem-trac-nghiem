@@ -78,7 +78,7 @@ const TOOLS = [
   {
     name: "get_job",
     description:
-      "Đọc chi tiết job: đáp án đã duyệt (theo mã đề), barem tự luận, danh sách bài nộp (id, tên HS, URL ảnh).",
+      "Đọc chi tiết job: đáp án đã duyệt (theo mã đề), barem tự luận, danh sách bài nộp (id, tên HS, URL ảnh). Job có trường mode: 'full' = chấm cả bài, 'essay' = chỉ chấm lại tự luận, 'mcq' = chỉ chấm lại trắc nghiệm. Với job chấm lại từng phần, kết quả còn kèm existing_results (điểm + chi tiết cũ của từng bài) — phần không chấm lại được app giữ nguyên.",
     inputSchema: {
       type: "object",
       properties: { jobId: { type: "string" } },
@@ -114,7 +114,7 @@ const TOOLS = [
   {
     name: "submit_result",
     description:
-      "Nộp kết quả chấm 1 bài: điểm trắc nghiệm, điểm tự luận, tổng điểm, kết quả từng câu (câu, đáp án HS, đáp án đúng, đúng/sai, điểm), nhận xét tự luận theo bước, URL ảnh trắc nghiệm đã chấm (khoanh xanh/đỏ/vàng), URL ảnh tự luận đã chấm (khung ghi chú từng bước barem — annotatedEssayImageUrl), và studentName — tên HS AI đọc được trên bài làm (ô Họ và tên trên phiếu; null nếu không đọc được, app giữ tên tạm HS N).",
+      "Nộp kết quả chấm 1 bài: điểm trắc nghiệm, điểm tự luận, tổng điểm, kết quả từng câu (câu, đáp án HS, đáp án đúng, đúng/sai, điểm), nhận xét tự luận theo bước, URL ảnh trắc nghiệm đã chấm (khoanh xanh/đỏ/vàng), URL ảnh tự luận đã chấm (khung ghi chú từng bước barem — annotatedEssayImageUrl), và studentName — tên HS AI đọc được trên bài làm (ô Họ và tên trên phiếu; null nếu không đọc được, app giữ tên tạm HS N). Với job chấm lại từng phần (mode 'essay'/'mcq' trong get_job): mode 'essay' chỉ cần gửi essay_steps + scoreEssay + annotatedEssayImageUrl (vẽ lại ảnh tự luận theo barem mới), phần trắc nghiệm app giữ nguyên; mode 'mcq' chỉ cần gửi items + exam_code + annotatedImageUrl (vẽ lại ảnh khoanh), phần tự luận app giữ nguyên. App tự sửa điểm trên kết quả cũ và đưa bài về chờ duyệt lại.",
     inputSchema: {
       type: "object",
       properties: {

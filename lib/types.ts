@@ -115,6 +115,44 @@ export interface GradeJobRow {
   worker_id: string | null;
   created_at: string;
   finished_at: string | null;
+  /** Chế độ chấm của job (migration 005): "full" chấm cả bài (mặc định),
+   *  "essay" chỉ chấm lại tự luận, "mcq" chỉ chấm lại trắc nghiệm.
+   *  Vắng mặt khi chưa chạy migration 005 — lúc đó chế độ được mã hoá ở
+   *  tiền tố của stage ("regrade:essay|..."), xem jobModeOf(). */
+  mode?: GradeMode | null;
+}
+
+/** Chế độ chấm của 1 job: full = chấm cả bài, essay = chỉ tự luận, mcq = chỉ trắc nghiệm. */
+export type GradeMode = "full" | "essay" | "mcq";
+
+export const GRADE_MODE_LABEL: Record<GradeMode, string> = {
+  full: "Chấm lại cả hai phần",
+  essay: "Chấm lại tự luận",
+  mcq: "Chấm lại trắc nghiệm",
+};
+
+/** Tiền tố stage dùng để mã hoá chế độ chấm lại khi chưa có cột mode (migration 005). */
+export const REGRADE_STAGE_PREFIX = "regrade:";
+
+/** Đọc chế độ chấm của job: ưu tiên cột mode (migration 005), sau đó tiền tố stage. */
+export function jobModeOf(job: { mode?: string | null; stage?: string | null }): GradeMode {
+  if (job.mode === "essay" || job.mode === "mcq" || job.mode === "full") return job.mode;
+  const stage = job.stage ?? "";
+  if (stage.startsWith(REGRADE_STAGE_PREFIX)) {
+    const m = stage.slice(REGRADE_STAGE_PREFIX.length).split("|")[0];
+    if (m === "essay" || m === "mcq") return m;
+  }
+  return "full";
+}
+
+/** Nhãn stage hiển thị cho GV: bỏ tiền tố mã hoá chế độ (nếu có). */
+export function stageLabel(stage: string | null | undefined): string {
+  const s = stage ?? "";
+  if (s.startsWith(REGRADE_STAGE_PREFIX)) {
+    const idx = s.indexOf("|");
+    return idx >= 0 ? s.slice(idx + 1) : "";
+  }
+  return s;
 }
 
 /** Job tách ý + dựng barem tự luận bằng AI (migration 004). */

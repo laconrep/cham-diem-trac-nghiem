@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { GradeResultRow, Submission, SubmissionStatus } from "@/lib/types";
-import { SUBMISSION_STATUS_CLASS, SUBMISSION_STATUS_LABEL } from "@/lib/types";
+import { SUBMISSION_STATUS_CLASS, SUBMISSION_STATUS_LABEL, stageLabel } from "@/lib/types";
 
 interface ResultItem {
   submission: Submission;
@@ -240,6 +240,50 @@ export default function SessionWorkbench({
       .catch(() => setCriteriaLoaded(true));
   }, [sessionId]);
 
+  // ---------- Sửa barem sau khi đã duyệt/lưu phiên ----------
+  // Điểm các bài đã chấm giữ nguyên; sửa xong bấm "Chấm lại tự luận" để áp barem mới.
+  const [editingBarem, setEditingBarem] = useState(false);
+  const [draftSteps, setDraftSteps] = useState<{ content: string; points: string }[]>([]);
+  const [savingBarem, setSavingBarem] = useState(false);
+  const [baremMsg, setBaremMsg] = useState("");
+
+  function startEditBarem() {
+    setDraftSteps(essayBarem.map((s) => ({ content: s.content, points: String(s.points).replace(".", ",") })));
+    setBaremMsg("");
+    setEditingBarem(true);
+  }
+
+  function updateDraftStep(idx: number, patch: Partial<{ content: string; points: string }>) {
+    setDraftSteps((prev) => prev.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
+  }
+
+  async function saveBarem() {
+    const steps = draftSteps
+      .filter((s) => s.content.trim())
+      .map((s) => ({ content: s.content.trim(), points: parseFloat(s.points.replace(",", ".")) || 0 }));
+    setSavingBarem(true);
+    setBaremMsg("");
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}/barem`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ essayBarem: steps }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        setBaremMsg(data.error ?? "Không lưu được barem.");
+        return;
+      }
+      setEssayBarem(data.essayBarem as { content: string; points: number }[]);
+      setEditingBarem(false);
+      setBaremMsg("Đã lưu barem mới. Bấm “Chấm lại tự luận” bên dưới để chấm lại theo barem này (điểm sẽ được sửa khi chấm xong).");
+    } catch {
+      setBaremMsg("Không lưu được barem. Thử lại.");
+    } finally {
+      setSavingBarem(false);
+    }
+  }
+
   // ---------- Kết quả chấm (poll nhẹ, hiện dần theo thứ tự chấm) ----------
   const [items, setItems] = useState<ResultItem[]>([]);
   const [jobs, setJobs] = useState<JobInfo[]>([]);
@@ -287,10 +331,31 @@ export default function SessionWorkbench({
     try {
       const res = await fetch(`/api/sessions/${sessionId}/grade`, { method: "POST" });
       const data = await res.json();
-      setGradeMsg(data.ok ? (data.jobId ? `Đã xếp ${data.attached ?? 0} bài vào hàng chờ chấm.` : "Không còn bài nào chưa chấm.") : (data.error ?? "Không tạo được job."));
+      setGradeMsg(data.ok ? (data.message ?? (data.jobId ? `Đã xếp ${data.attached ?? 0} bài vào hàng chờ chấm.` : "Không còn bài nào chưa chấm.")) : (data.error ?? "Không tạo được job."));
       void refreshResults();
     } catch {
       setGradeMsg("Không tạo được job. Thử lại.");
+    }
+  }
+
+  // Chấm lại toàn bộ bài đã chấm: "essay" chỉ tự luận (áp barem mới),
+  // "mcq" chỉ trắc nghiệm, "both" cả hai phần. Điểm được sửa khi chấm xong;
+  // kết quả đã duyệt sẽ chuyển về chờ duyệt lại.
+  async function regrade(mode: "essay" | "mcq" | "both") {
+    const label = mode === "essay" ? "tự luận" : mode === "mcq" ? "trắc nghiệm" : "cả hai phần";
+    if (!window.confirm(`Chấm lại ${label} cho toàn bộ bài đã chấm trong phiên? Điểm sẽ được sửa khi chấm xong, bài đã duyệt sẽ chuyển về chờ duyệt lại.`)) return;
+    setGradeMsg("Đang tạo job chấm lại…");
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}/regrade`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode }),
+      });
+      const data = await res.json();
+      setGradeMsg(data.ok ? (data.message ?? "Đã tạo job chấm lại.") : (data.error ?? "Không tạo được job chấm lại."));
+      void refreshResults();
+    } catch {
+      setGradeMsg("Không tạo được job chấm lại. Thử lại.");
     }
   }
 
@@ -407,12 +472,90 @@ export default function SessionWorkbench({
 
       {/* ===== Barem tự luận đã lưu ===== */}
       <section className="rounded-lg border border-slate-200 bg-white p-4">
-        <h2 className="text-base font-bold">Barem tự luận đã lưu (Phần IV)</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-base font-bold">Barem tự luận đã lưu (Phần IV)</h2>
+          {!editingBarem && criteriaLoaded && (
+            <button
+              type="button"
+              onClick={startEditBarem}
+              className="rounded-lg border border-teal-700 px-3 py-1.5 text-sm font-semibold text-teal-800 hover:bg-teal-50"
+            >
+              ✎ Sửa barem
+            </button>
+          )}
+        </div>
         {!criteriaLoaded ? (
           <p className="mt-1 text-sm text-slate-500">Đang tải…</p>
+        ) : editingBarem ? (
+          <div className="mt-2">
+            <p className="text-xs text-slate-500">
+              Sửa nội dung/điểm từng ý, thêm hoặc xóa ý. Điểm nhỏ nhất 0,25. Lưu xong điểm cũ vẫn giữ nguyên —
+              bấm “Chấm lại tự luận” ở khung dưới để chấm lại theo barem mới.
+            </p>
+            <div className="mt-2 space-y-2">
+              {draftSteps.map((s, i) => (
+                <div key={i} className="flex items-start gap-2">
+                  <textarea
+                    value={s.content}
+                    onChange={(e) => updateDraftStep(i, { content: e.target.value })}
+                    rows={2}
+                    placeholder="Nội dung ý (vd: Viết đúng phương trình)"
+                    className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  />
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={s.points}
+                    onChange={(e) => updateDraftStep(i, { points: e.target.value })}
+                    title="Điểm của ý này"
+                    className="w-16 rounded-lg border border-slate-300 px-2 py-2 text-center text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setDraftSteps((prev) => prev.filter((_, j) => j !== i))}
+                    title="Xóa ý này"
+                    className="rounded-lg border border-slate-300 px-2 py-2 text-sm text-slate-500 hover:bg-red-50 hover:text-red-600"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setDraftSteps((prev) => [...prev, { content: "", points: "0,25" }])}
+                className="rounded-lg border border-teal-700 px-3 py-1.5 text-sm font-semibold text-teal-700 hover:bg-teal-50"
+              >
+                + Thêm ý
+              </button>
+              <span className="text-xs text-slate-500">
+                Tổng điểm tự luận:{" "}
+                <b>{Number(draftSteps.reduce((a, s) => a + (parseFloat(s.points.replace(",", ".")) || 0), 0).toFixed(2))}đ</b>{" "}
+                ({draftSteps.filter((s) => s.content.trim()).length} ý)
+              </span>
+            </div>
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                onClick={() => void saveBarem()}
+                disabled={savingBarem}
+                className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-50"
+              >
+                {savingBarem ? "Đang lưu…" : "Lưu barem"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditingBarem(false)}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50"
+              >
+                Hủy
+              </button>
+            </div>
+          </div>
         ) : essayBarem.length === 0 ? (
           <p className="mt-1 text-sm text-slate-500">
-            Phiên này chưa có barem tự luận. Barem được nạp khi tạo phiên (từ mục “Barem tự luận” trong file Word hoặc nhập tay ở ô barem).
+            Phiên này chưa có barem tự luận. Bấm “Sửa barem” để thêm ý, hoặc barem được nạp khi tạo phiên (từ mục “Barem tự luận” trong file Word).
           </p>
         ) : (
           <>
@@ -429,6 +572,7 @@ export default function SessionWorkbench({
             </p>
           </>
         )}
+        {baremMsg && <p className="mt-2 text-sm text-slate-700">{baremMsg}</p>}
       </section>
 
       {/* ===== Điều khiển phiên ===== */}
@@ -449,10 +593,46 @@ export default function SessionWorkbench({
         {activeJob && (
           <span className="self-center rounded bg-amber-100 px-3 py-1 text-sm text-amber-800">
             Đang chấm ngầm: {activeJob.completed}/{activeJob.total} bài ({activeJob.progress}%)
-            {activeJob.stage ? ` — ${activeJob.stage}` : ""}
+            {stageLabel(activeJob.stage) ? ` — ${stageLabel(activeJob.stage)}` : ""}
           </span>
         )}
         {gradeMsg && <span className="self-center text-sm text-slate-600">{gradeMsg}</span>}
+      </section>
+
+      {/* ===== Chấm lại (toàn bộ bài đã chấm) ===== */}
+      <section className="rounded-lg border border-slate-200 bg-white p-4">
+        <h2 className="text-base font-bold">Chấm lại</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          Chấm lại toàn bộ bài đã chấm trong phiên. Chấm xong điểm sẽ được sửa trên kết quả cũ,
+          bài đã duyệt sẽ chuyển về chờ duyệt lại.
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => void regrade("essay")}
+            disabled={!!activeJob}
+            className="rounded-lg border border-teal-700 px-4 py-2 text-sm font-semibold text-teal-800 hover:bg-teal-50 disabled:opacity-50"
+          >
+            Chấm lại tự luận
+          </button>
+          <button
+            type="button"
+            onClick={() => void regrade("mcq")}
+            disabled={!!activeJob}
+            className="rounded-lg border border-teal-700 px-4 py-2 text-sm font-semibold text-teal-800 hover:bg-teal-50 disabled:opacity-50"
+          >
+            Chấm lại trắc nghiệm
+          </button>
+          <button
+            type="button"
+            onClick={() => void regrade("both")}
+            disabled={!!activeJob}
+            className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-50"
+          >
+            Chấm lại cả hai phần
+          </button>
+        </div>
+        {activeJob && <p className="mt-2 text-xs text-slate-500">Đang có job chấm chạy — chờ xong rồi mới chấm lại được.</p>}
       </section>
 
       {/* ===== Kết quả (bài chấm trước nằm đầu) ===== */}

@@ -135,3 +135,30 @@ Với MỖI bài nộp được giao:
 - Supabase RIÊNG của app: https://ofidlkjcjyzwlfnzfzur.supabase.co,
   service key file ~/.config/muse-chat-grader/supabase_service_key_cdtn
   (0600 — không in, không ghi đè file key của thaoluannhom).
+
+## Sửa barem sau duyệt + chấm lại (từ 28/11/2026)
+
+- GV sửa barem tự luận ngay trong trang phiên (nút "Sửa barem" → PATCH
+  `/api/sessions/[id]/barem`): chỉ thay `answer_key.essayBarem`, điểm cũ
+  giữ nguyên cho đến khi chấm lại.
+- Nút "Chấm lại" có 3 chế độ (POST `/api/sessions/[id]/regrade`):
+  `essay` = chỉ tự luận, `mcq` = chỉ trắc nghiệm, `both` = cả hai.
+  Job chấm lại nằm trong `cdtn_grade_jobs` với `mode` tương ứng
+  (migration 005; chưa chạy migration thì mode mã hoá ở tiền tố stage
+  `regrade:<mode>|...` — code đọc được cả hai). Bài đã chấm được đưa về
+  `queued` + gắn job mới; hook `cdtn-grade-watch` vẫn đánh thức như job thường.
+- Khi nhận job: `get_job` trả `job.mode` + `existing_results` (kết quả cũ
+  từng bài). Brief cho agent chấm lại:
+  - mode `essay`: chỉ chấm tự luận theo barem MỚI của phiên, vẽ lại ảnh
+    tự luận (annotated-2.jpg), submit chỉ `essay_steps` + `scoreEssay` +
+    `annotatedEssayImageUrl` (+ feedback mới nếu có). KHÔNG gửi items.
+  - mode `mcq`: chỉ chấm trắc nghiệm theo đáp án hiện tại, vẽ lại ảnh
+    khoanh (annotated-1.jpg), submit chỉ `items` + `exam_code` +
+    `annotatedImageUrl`. KHÔNG gửi essay_steps.
+  - mode `full` (both): chấm như job thường, đủ cả 2 ảnh.
+- App tự SỬA điểm trên đúng dòng kết quả cũ (không tạo dòng trùng), giữ
+  nguyên phần không chấm lại, tính lại tổng điểm, và đưa bài về
+  `approved=false` (chờ GV duyệt lại). Bài lỗi trong job chấm lại từng
+  phần: app giữ nguyên kết quả cũ, không ghi dòng lỗi đè điểm cũ.
+- Bài mới tải lên trong lúc job chấm lại đang chạy sẽ vào job chấm đủ
+  riêng (không bị chấm thiếu phần).
